@@ -52,3 +52,8 @@ matplotlib-*/
 # Project runtime outputs
 *-vibfit/
 error.log
+
+# Local sibling project folders
+/jupyter/
+/rampo/
+/vibeels/
