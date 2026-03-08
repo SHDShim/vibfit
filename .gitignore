@@ -43,7 +43,7 @@ htmlcov/
 # Editors and OS files
 .DS_Store
 .idea/
-.vscode/
+.vscode/*
 
 # Qt / Matplotlib runtime caches
 .cache/
