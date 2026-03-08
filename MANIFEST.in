@@ -1,0 +1,4 @@
+include README.md
+include pyproject.toml
+recursive-include vibfit *.py
+global-exclude __pycache__ *.py[cod] .DS_Store
