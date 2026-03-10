@@ -43,6 +43,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self._build_background_tab()
         self._build_peakfit_tab()
         self._build_sections_tab()
+        self._align_spinboxes_right()
+
+    def _align_spinboxes_right(self):
+        alignment = QtCore.Qt.AlignmentFlag.AlignRight
+        for spinbox in self.findChildren(QtWidgets.QAbstractSpinBox):
+            if hasattr(spinbox, "setAlignment"):
+                spinbox.setAlignment(alignment)
 
     @staticmethod
     def _accent_button_style(bg: str, border: str) -> str:
@@ -101,6 +108,7 @@ class MainWindow(QtWidgets.QMainWindow):
         layout = QtWidgets.QFormLayout(tab)
 
         self.pushButton_LoadSpectrum = QtWidgets.QPushButton("Load spectrum")
+        self.pushButton_LoadSpectrum.setStyleSheet(self._accent_button_style("#166534", "#22c55e"))
         self.label_SpectrumPath = QtWidgets.QLabel("No spectrum loaded")
         self.label_SpectrumPath.setWordWrap(True)
         self.label_SpectrumShape = QtWidgets.QLabel("-")
@@ -186,11 +194,20 @@ class MainWindow(QtWidgets.QMainWindow):
         controls = QtWidgets.QHBoxLayout()
         self.pushButton_SelectBackgroundArea = QtWidgets.QPushButton("Select area")
         self.pushButton_SelectBackgroundArea.setCheckable(True)
-        self.pushButton_SelectBackgroundArea.setStyleSheet(self._accent_button_style("#166534", "#22c55e"))
+        self.pushButton_SelectBackgroundArea.setStyleSheet(self._accent_button_style("#a16207", "#facc15"))
         self.pushButton_RemoveBackgroundArea = QtWidgets.QPushButton("Remove selected")
         self.pushButton_ClearBackgroundAreas = QtWidgets.QPushButton("Clear areas")
         self.pushButton_FitBackground = QtWidgets.QPushButton("Fit background")
         self.pushButton_FitBackground.setStyleSheet(self._accent_button_style("#991b1b", "#ef4444"))
+        background_buttons = (
+            self.pushButton_SelectBackgroundArea,
+            self.pushButton_RemoveBackgroundArea,
+            self.pushButton_ClearBackgroundAreas,
+            self.pushButton_FitBackground,
+        )
+        target_height = max(button.sizeHint().height() for button in background_buttons)
+        for button in background_buttons:
+            button.setMinimumHeight(target_height)
         controls.addWidget(self.pushButton_SelectBackgroundArea)
         controls.addWidget(self.pushButton_RemoveBackgroundArea)
         controls.addWidget(self.pushButton_ClearBackgroundAreas)
@@ -221,40 +238,50 @@ class MainWindow(QtWidgets.QMainWindow):
         self.pushButton_SetFitRange = QtWidgets.QPushButton("Set fit range")
         self.pushButton_SetFitRange.setCheckable(True)
         self.pushButton_ClearFitRange = QtWidgets.QPushButton("Clear fit range")
-        self.pushButton_SetFitRange.setStyleSheet(self._accent_button_style("#166534", "#22c55e"))
-        for button in (
+        self.pushButton_SetFitRange.setStyleSheet(self._accent_button_style("#a16207", "#facc15"))
+        peakfit_row0_buttons = (
             self.pushButton_SetFitRange,
             self.pushButton_ClearFitRange,
-        ):
+        )
+        target_height = max(button.sizeHint().height() for button in peakfit_row0_buttons)
+        for button in peakfit_row0_buttons:
+            button.setMinimumHeight(target_height)
             button_row0.addWidget(button, 1)
         layout.addLayout(button_row0)
 
         button_row1 = QtWidgets.QHBoxLayout()
         self.pushButton_PickPeaks = QtWidgets.QPushButton("Pick peaks")
         self.pushButton_PickPeaks.setCheckable(True)
-        self.pushButton_PickPeaks.setStyleSheet(self._accent_button_style("#1d4ed8", "#60a5fa"))
+        self.pushButton_PickPeaks.setStyleSheet(self._accent_button_style("#a16207", "#facc15"))
         self.pushButton_RemovePeak = QtWidgets.QPushButton("Remove peak")
         self.pushButton_ClearPeaks = QtWidgets.QPushButton("Clear")
         self.pushButton_Fit = QtWidgets.QPushButton("Fit region")
         self.pushButton_Fit.setStyleSheet(self._accent_button_style("#991b1b", "#ef4444"))
-        for button in (
+        peakfit_row1_buttons = (
             self.pushButton_PickPeaks,
             self.pushButton_RemovePeak,
             self.pushButton_ClearPeaks,
             self.pushButton_Fit,
-        ):
+        )
+        target_height = max(button.sizeHint().height() for button in peakfit_row1_buttons)
+        for button in peakfit_row1_buttons:
+            button.setMinimumHeight(target_height)
             button_row1.addWidget(button, 1)
         layout.addLayout(button_row1)
 
         button_row2 = QtWidgets.QHBoxLayout()
         self.pushButton_SaveToSection = QtWidgets.QPushButton("Save to section")
+        self.pushButton_SaveToSection.setStyleSheet(self._accent_button_style("#166534", "#22c55e"))
         self.pushButton_SaveFitResults = QtWidgets.QPushButton("Save XLS")
         self.pushButton_ExportNPY = QtWidgets.QPushButton("Export NPY")
-        for button in (
+        peakfit_row2_buttons = (
             self.pushButton_SaveToSection,
             self.pushButton_SaveFitResults,
             self.pushButton_ExportNPY,
-        ):
+        )
+        target_height = max(button.sizeHint().height() for button in peakfit_row2_buttons)
+        for button in peakfit_row2_buttons:
+            button.setMinimumHeight(target_height)
             button_row2.addWidget(button, 1)
         layout.addLayout(button_row2)
 
@@ -314,15 +341,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
         controls = QtWidgets.QHBoxLayout()
         self.pushButton_SectionSetCurrent = QtWidgets.QPushButton("Set current")
+        self.pushButton_SectionSetCurrent.setStyleSheet(self._accent_button_style("#166534", "#22c55e"))
         self.pushButton_SectionZoom = QtWidgets.QPushButton("Zoom to section")
         self.pushButton_SectionRemove = QtWidgets.QPushButton("Remove selected")
         self.pushButton_SectionClear = QtWidgets.QPushButton("Clear list")
-        for button in (
+        section_buttons = (
             self.pushButton_SectionSetCurrent,
             self.pushButton_SectionZoom,
             self.pushButton_SectionRemove,
             self.pushButton_SectionClear,
-        ):
+        )
+        target_height = max(button.sizeHint().height() for button in section_buttons)
+        for button in section_buttons:
+            button.setMinimumHeight(target_height)
             controls.addWidget(button, 1)
         layout.addLayout(controls)
 
