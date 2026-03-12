@@ -72,6 +72,41 @@ class MainWindow(QtWidgets.QMainWindow):
             "}"
         )
 
+    @staticmethod
+    def _status_toggle_button_style(bg: str, border: str) -> str:
+        return (
+            "QPushButton {"
+            f"background-color: {bg};"
+            f"border: 1px solid {border};"
+            "border-radius: 4px;"
+            "color: #f3f4f6;"
+            "font-weight: 600;"
+            "padding: 6px 10px;"
+            "}"
+            "QPushButton:pressed {"
+            "padding-top: 7px;"
+            "padding-bottom: 5px;"
+            "}"
+            "QPushButton:checked {"
+            "background-color: #3f434b;"
+            "border: 1px solid #6b7280;"
+            "color: #f3f4f6;"
+            "}"
+        )
+
+    def _configure_status_toggle(self, button: QtWidgets.QPushButton, base_text: str, bg: str, border: str):
+        button.setCheckable(True)
+        button.setProperty("status_toggle_base_text", base_text)
+        button.setStyleSheet(self._status_toggle_button_style(bg, border))
+        button.toggled.connect(lambda checked, target=button: self._update_status_toggle_text(target, checked))
+        self._update_status_toggle_text(button, button.isChecked())
+
+    @staticmethod
+    def _update_status_toggle_text(button: QtWidgets.QPushButton, checked: bool):
+        base_text = button.property("status_toggle_base_text") or button.text()
+        state_text = "On" if checked else "Off"
+        button.setText(f"{base_text} ({state_text})")
+
     def _build_toolbar(self, parent_layout):
         toolbar_row = QtWidgets.QHBoxLayout()
         self.toolButton_ZoomOut = QtWidgets.QPushButton("Zoom out")
@@ -193,8 +228,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         controls = QtWidgets.QHBoxLayout()
         self.pushButton_SelectBackgroundArea = QtWidgets.QPushButton("Select area")
-        self.pushButton_SelectBackgroundArea.setCheckable(True)
-        self.pushButton_SelectBackgroundArea.setStyleSheet(self._accent_button_style("#a16207", "#facc15"))
+        self._configure_status_toggle(self.pushButton_SelectBackgroundArea, "Selected area", "#a16207", "#facc15")
         self.pushButton_RemoveBackgroundArea = QtWidgets.QPushButton("Remove selected")
         self.pushButton_ClearBackgroundAreas = QtWidgets.QPushButton("Clear areas")
         self.pushButton_FitBackground = QtWidgets.QPushButton("Fit background")
@@ -234,11 +268,14 @@ class MainWindow(QtWidgets.QMainWindow):
         tab = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(tab)
 
+        info = QtWidgets.QLabel("Use mouse for the bottom graph.")
+        info.setWordWrap(True)
+        layout.addWidget(info)
+
         button_row0 = QtWidgets.QHBoxLayout()
         self.pushButton_SetFitRange = QtWidgets.QPushButton("Set fit range")
-        self.pushButton_SetFitRange.setCheckable(True)
+        self._configure_status_toggle(self.pushButton_SetFitRange, "Set fit range", "#a16207", "#facc15")
         self.pushButton_ClearFitRange = QtWidgets.QPushButton("Clear fit range")
-        self.pushButton_SetFitRange.setStyleSheet(self._accent_button_style("#a16207", "#facc15"))
         peakfit_row0_buttons = (
             self.pushButton_SetFitRange,
             self.pushButton_ClearFitRange,
@@ -251,8 +288,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         button_row1 = QtWidgets.QHBoxLayout()
         self.pushButton_PickPeaks = QtWidgets.QPushButton("Pick peaks")
-        self.pushButton_PickPeaks.setCheckable(True)
-        self.pushButton_PickPeaks.setStyleSheet(self._accent_button_style("#a16207", "#facc15"))
+        self._configure_status_toggle(self.pushButton_PickPeaks, "Pick peaks", "#a16207", "#facc15")
         self.pushButton_RemovePeak = QtWidgets.QPushButton("Remove peak")
         self.pushButton_ClearPeaks = QtWidgets.QPushButton("Clear")
         self.pushButton_Fit = QtWidgets.QPushButton("Fit region")
@@ -272,11 +308,9 @@ class MainWindow(QtWidgets.QMainWindow):
         button_row2 = QtWidgets.QHBoxLayout()
         self.pushButton_SaveToSection = QtWidgets.QPushButton("Save to section")
         self.pushButton_SaveToSection.setStyleSheet(self._accent_button_style("#166534", "#22c55e"))
-        self.pushButton_SaveFitResults = QtWidgets.QPushButton("Save XLS")
         self.pushButton_ExportNPY = QtWidgets.QPushButton("Export NPY")
         peakfit_row2_buttons = (
             self.pushButton_SaveToSection,
-            self.pushButton_SaveFitResults,
             self.pushButton_ExportNPY,
         )
         target_height = max(button.sizeHint().height() for button in peakfit_row2_buttons)
@@ -342,12 +376,12 @@ class MainWindow(QtWidgets.QMainWindow):
         controls = QtWidgets.QHBoxLayout()
         self.pushButton_SectionSetCurrent = QtWidgets.QPushButton("Set current")
         self.pushButton_SectionSetCurrent.setStyleSheet(self._accent_button_style("#166534", "#22c55e"))
-        self.pushButton_SectionZoom = QtWidgets.QPushButton("Zoom to section")
+        self.pushButton_SaveFitResults = QtWidgets.QPushButton("Save XLS")
         self.pushButton_SectionRemove = QtWidgets.QPushButton("Remove selected")
         self.pushButton_SectionClear = QtWidgets.QPushButton("Clear list")
         section_buttons = (
             self.pushButton_SectionSetCurrent,
-            self.pushButton_SectionZoom,
+            self.pushButton_SaveFitResults,
             self.pushButton_SectionRemove,
             self.pushButton_SectionClear,
         )
@@ -357,9 +391,18 @@ class MainWindow(QtWidgets.QMainWindow):
             controls.addWidget(button, 1)
         layout.addLayout(controls)
 
-        self.tableWidget_Sections = QtWidgets.QTableWidget(0, 6)
+        self.tableWidget_Sections = QtWidgets.QTableWidget(0, 8)
         self.tableWidget_Sections.setHorizontalHeaderLabels(
-            ["Saved", "Region", "Min (cm$^{-1}$)", "Max (cm$^{-1}$)", "Peaks", "Fit"]
+            [
+                "Saved",
+                "Comment",
+                "xbg min",
+                "xbg max",
+                "xpfit min",
+                "xpfit max",
+                "Peaks",
+                "Fit",
+            ]
         )
         header = self.tableWidget_Sections.horizontalHeader()
         header.setSectionResizeMode(0, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
@@ -368,6 +411,8 @@ class MainWindow(QtWidgets.QMainWindow):
         header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(5, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(6, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(7, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         self.tableWidget_Sections.verticalHeader().setVisible(False)
         self.tableWidget_Sections.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
         self.tableWidget_Sections.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)

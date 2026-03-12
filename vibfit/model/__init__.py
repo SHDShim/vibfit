@@ -1,7 +1,16 @@
 """Data model for vibfit (spectrum, sections, fits)."""
 
 from .fitting import build_fit, clone_region, default_region, fit_background, load_spectrum
-from .session_io import export_fit_results, export_plot_npy, get_param_dir, list_backup_events, load_session_from_backup, save_session, update_backup_comment
+from .session_io import (
+    export_fit_results,
+    export_plot_npy,
+    export_saved_sections,
+    get_param_dir,
+    list_backup_events,
+    load_session_from_backup,
+    save_session,
+    update_backup_comment,
+)
 from .state import (
     BackgroundArea,
     BackgroundFitResult,
@@ -39,6 +48,7 @@ __all__ = [
     "ev_to_cminv",
     "export_fit_results",
     "export_plot_npy",
+    "export_saved_sections",
     "fit_background",
     "load_spectrum",
     "get_param_dir",

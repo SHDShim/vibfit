@@ -21,11 +21,11 @@ vibfit
 2. In the `File` tab, click `Load spectrum` and open a supported spectrum file. `vibfit` currently supports `*.vxy`. Support for additional formats is planned; contact `shdshim` if you need another file type.
 3. Use the toolbar to zoom to the spectral range you want to analyze.
 4. In the `Background` tab, click `Select area` and mark one or more background-only regions on the top plot. Click `Fit background` when you are done. To add another region, click `Select area` again.
-5. In the `PeakFit` tab, click `Set fit range`, then drag across the top plot to define the fitting window. Use `Clear fit range` to restore the full spectrum.
+5. In the `PeakFit` tab, click `Set fit range`, then drag across the bottom plot to define the fitting window. Use `Clear fit range` to restore the full spectrum.
 6. In the `PeakFit` tab, click `Pick peaks` and add peaks within the active fit range in the bottom panel. To add a peak, hold `Shift`, click near the left side of the peak FWHM, drag to the right side, and release. Repeat for each peak. To remove a peak, right-click near it.
 7. Edit peak names and parameter bounds in the table as needed, then click `Fit region`.
 8. Review the fit results table and report. Use `Save to section` to store the current fitted region in the session and clear the active fit before continuing to the next region.
-9. Use `Save XLS` to export the fit results as `.json` and `.xlsx` files. Use `Export NPY` to export plot arrays together with a reproduction Python script and rendered figures.
+9. Use `Save XLS` in the `Sections` tab to export all saved sections as `.json` and `.xlsx` files, with one Excel sheet per section. Use `Export NPY` to export plot arrays together with a reproduction Python script and rendered figures.
 10. Click `Save` in the toolbar to create a session backup. Backups are stored next to the source spectrum in a `*-vibfit` directory and can be restored from the `File` tab.
 
 Useful controls:

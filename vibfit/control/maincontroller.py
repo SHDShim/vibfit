@@ -19,7 +19,7 @@ from ..model import (
     build_fit,
     clone_region,
     default_region,
-    export_fit_results,
+    export_saved_sections,
     export_plot_npy,
     fit_background,
     get_param_dir,
@@ -33,6 +33,8 @@ from ..view import MainWindow
 
 
 class MainController:
+    DEFAULT_SECTION_COMMENT = "Write your comment here"
+
     def __init__(self):
         self.widget = MainWindow()
         self.settings = QtCore.QSettings("vibfit", "vibfit")
@@ -90,13 +92,13 @@ class MainController:
         self.widget.pushButton_ExportNPY.clicked.connect(self.export_plot_npy)
         self.widget.pushButton_Fit.clicked.connect(self.fit_region)
         self.widget.pushButton_SectionSetCurrent.clicked.connect(self.set_selected_section_current)
-        self.widget.pushButton_SectionZoom.clicked.connect(self.zoom_to_selected_section)
         self.widget.pushButton_SectionRemove.clicked.connect(self.remove_selected_sections)
         self.widget.pushButton_SectionClear.clicked.connect(self.clear_section_list)
         self.widget.pushButton_SaveSession.clicked.connect(self.save_current_session)
         self.widget.pushButton_RestoreSession.clicked.connect(self.restore_selected_backup)
         self.widget.pushButton_EditBackupComment.clicked.connect(self.edit_selected_backup_comment)
         self.widget.tableWidget_Peaks.itemChanged.connect(self.handle_peak_table_change)
+        self.widget.tableWidget_Sections.itemChanged.connect(self.handle_section_table_change)
 
     def show_window(self):
         self.widget.show()
@@ -205,6 +207,7 @@ class MainController:
         if self.spectrum is None:
             QtWidgets.QMessageBox.information(self.widget, "No spectrum", "Load a spectrum first.")
             return
+        self._clear_background_mouse_mode()
         raw_ax = self.widget.mpl.canvas.ax_raw
         fit_ax = self.widget.mpl.canvas.ax_fit
         preserve_limits = {
@@ -240,7 +243,7 @@ class MainController:
             QtWidgets.QMessageBox.information(self.widget, "Background first", "Fit the background before running PeakFit.")
             return
         preserve_limits = self._current_plot_limits()
-        self.widget.pushButton_PickPeaks.setChecked(False)
+        self._clear_peakfit_mouse_modes()
         try:
             self.fit_result = build_fit(self.current_region, self.spectrum, self.background_result)
         except Exception as exc:
@@ -264,7 +267,7 @@ class MainController:
 
     def _toggle_fit_range_selector(self, checked: bool):
         if checked:
-            self._activate_fit_range_selector()
+            self._activate_peakfit_mouse_mode(fit_range=True)
         else:
             self._deactivate_fit_range_selector()
 
@@ -311,20 +314,29 @@ class MainController:
 
     def _populate_sections_table(self):
         table = self.widget.tableWidget_Sections
+        table.blockSignals(True)
         table.setRowCount(len(self.saved_sections))
         for row, section in enumerate(self.saved_sections):
+            xbg_min, xbg_max = self._section_background_bounds(section)
+            xpfit_min, xpfit_max = self._section_peakfit_bounds(section)
             values = [
                 section.timestamp,
                 section.label,
-                f"{section.region.x_min_cminv:.2f}",
-                f"{section.region.x_max_cminv:.2f}",
+                f"{xbg_min:.2f}" if xbg_min is not None else "",
+                f"{xbg_max:.2f}" if xbg_max is not None else "",
+                f"{xpfit_min:.2f}" if xpfit_min is not None else "",
+                f"{xpfit_max:.2f}" if xpfit_max is not None else "",
                 str(len(section.region.peaks)),
                 "Yes" if section.fit_result is not None else "No",
             ]
             for col, text in enumerate(values):
                 item = QtWidgets.QTableWidgetItem(text)
-                item.setFlags(QtCore.Qt.ItemFlag.ItemIsSelectable | QtCore.Qt.ItemFlag.ItemIsEnabled)
+                flags = QtCore.Qt.ItemFlag.ItemIsSelectable | QtCore.Qt.ItemFlag.ItemIsEnabled
+                if col == 1:
+                    flags |= QtCore.Qt.ItemFlag.ItemIsEditable
+                item.setFlags(flags)
                 table.setItem(row, col, item)
+        table.blockSignals(False)
 
     def _current_plot_limits(self):
         raw_ax = self.widget.mpl.canvas.ax_raw
@@ -335,6 +347,41 @@ class MainController:
             "fit_xlim": fit_ax.get_xlim(),
             "fit_ylim": fit_ax.get_ylim(),
         }
+
+    def _set_button_checked(self, button, checked: bool):
+        if button.isChecked() == checked:
+            return
+        button.blockSignals(True)
+        button.setChecked(checked)
+        button.blockSignals(False)
+        if button.property("status_toggle_base_text") is not None:
+            self.widget._update_status_toggle_text(button, checked)
+
+    def _clear_background_mouse_mode(self):
+        self._set_button_checked(self.widget.pushButton_SelectBackgroundArea, False)
+        self._deactivate_background_area_selector()
+
+    def _clear_peakfit_mouse_modes(self):
+        self._set_button_checked(self.widget.pushButton_SetFitRange, False)
+        self._set_button_checked(self.widget.pushButton_PickPeaks, False)
+        self._deactivate_fit_range_selector()
+        self._deactivate_peak_picker()
+
+    def _activate_background_mouse_mode(self):
+        self._clear_peakfit_mouse_modes()
+        self._clear_background_mouse_mode()
+        self._set_button_checked(self.widget.pushButton_SelectBackgroundArea, True)
+        self._activate_background_area_selector()
+
+    def _activate_peakfit_mouse_mode(self, *, fit_range: bool = False, peak_pick: bool = False):
+        self._clear_background_mouse_mode()
+        self._clear_peakfit_mouse_modes()
+        if fit_range:
+            self._set_button_checked(self.widget.pushButton_SetFitRange, True)
+            self._activate_fit_range_selector()
+        elif peak_pick:
+            self._set_button_checked(self.widget.pushButton_PickPeaks, True)
+            self._activate_peak_picker()
 
     def _sync_view_controls_from_axes(self):
         raw_ax = self.widget.mpl.canvas.ax_raw
@@ -374,6 +421,27 @@ class MainController:
         span = max(y_max - y_min, 1e-9)
         pad = 0.08 * span
         return y_min - pad, y_max + pad
+
+    @staticmethod
+    def _section_peakfit_bounds(section: SavedSection) -> tuple[float | None, float | None]:
+        if section.fit_result is not None:
+            x_values = np.asarray(section.fit_result.x_cminv, dtype=float)
+            if x_values.size:
+                return float(np.nanmin(x_values)), float(np.nanmax(x_values))
+        return float(section.region.x_min_cminv), float(section.region.x_max_cminv)
+
+    @staticmethod
+    def _section_background_bounds(section: SavedSection) -> tuple[float | None, float | None]:
+        if section.background_result is not None:
+            x_values = np.asarray(section.background_result.x_cminv, dtype=float)
+            if x_values.size:
+                return float(np.nanmin(x_values)), float(np.nanmax(x_values))
+        areas = list(section.region.background.fit_areas)
+        if areas:
+            x_min = min(min(float(area.x_min_cminv), float(area.x_max_cminv)) for area in areas)
+            x_max = max(max(float(area.x_min_cminv), float(area.x_max_cminv)) for area in areas)
+            return x_min, x_max
+        return None, None
 
     def find_view_minmax(self):
         raw_ax = self.widget.mpl.canvas.ax_raw
@@ -557,7 +625,7 @@ class MainController:
         self._fit_range_press_cid = canvas.mpl_connect("button_press_event", self._on_fit_range_press)
         self._fit_range_motion_cid = canvas.mpl_connect("motion_notify_event", self._on_fit_range_motion)
         self._fit_range_release_cid = canvas.mpl_connect("button_release_event", self._on_fit_range_release)
-        self.log("Drag on the top plot to set the fit range.")
+        self.log("Drag on the bottom plot to set the fit range.")
 
     def _deactivate_fit_range_selector(self):
         canvas = self.widget.mpl.canvas
@@ -576,13 +644,13 @@ class MainController:
         canvas.draw_idle()
 
     def _on_fit_range_press(self, event):
-        if event.inaxes is not self.widget.mpl.canvas.ax_raw or event.xdata is None:
+        if event.inaxes is not self.widget.mpl.canvas.ax_fit or event.xdata is None:
             return
         self._fit_range_press_x = float(event.xdata)
         self._update_fit_range_preview(float(event.xdata))
 
     def _on_fit_range_motion(self, event):
-        if self._fit_range_press_x is None or event.inaxes is not self.widget.mpl.canvas.ax_raw or event.xdata is None:
+        if self._fit_range_press_x is None or event.inaxes is not self.widget.mpl.canvas.ax_fit or event.xdata is None:
             return
         self._update_fit_range_preview(float(event.xdata))
 
@@ -605,7 +673,7 @@ class MainController:
         self.widget.pushButton_SetFitRange.setChecked(False)
 
     def _update_fit_range_preview(self, x_current: float):
-        ax = self.widget.mpl.canvas.ax_raw
+        ax = self.widget.mpl.canvas.ax_fit
         x0 = min(float(self._fit_range_press_x), float(x_current))
         x1 = max(float(self._fit_range_press_x), float(x_current))
         if self._fit_range_preview is not None:
@@ -618,7 +686,7 @@ class MainController:
 
     def _toggle_background_area_selector(self, checked: bool):
         if checked:
-            self._activate_background_area_selector()
+            self._activate_background_mouse_mode()
         else:
             self._deactivate_background_area_selector()
 
@@ -658,7 +726,7 @@ class MainController:
 
     def _toggle_peak_picker(self, checked: bool):
         if checked:
-            self._activate_peak_picker()
+            self._activate_peakfit_mouse_mode(peak_pick=True)
         else:
             self._deactivate_peak_picker()
 
@@ -762,6 +830,11 @@ class MainController:
                 pass
             self._peak_pick_preview = None
 
+    @staticmethod
+    def _default_peak_pick_sigma() -> float:
+        # lmfit's pseudo-Voigt uses sigma such that FWHM ~= 2 * sigma.
+        return 0.5
+
     def _peak_signal_y(self, x_value: float) -> float:
         if self.background_result is None:
             return 0.0
@@ -775,13 +848,13 @@ class MainController:
     def _preview_peak_parameters(self, x_current: float) -> tuple[float, float, float]:
         if self._peak_pick_press_x is None:
             center = float(x_current)
-            sigma = max((self.current_region.x_max_cminv - self.current_region.x_min_cminv) / 40.0, 20.0)
+            sigma = self._default_peak_pick_sigma()
         else:
             x0 = min(float(self._peak_pick_press_x), float(x_current))
             x1 = max(float(self._peak_pick_press_x), float(x_current))
             if abs(x1 - x0) <= 1e-9:
                 center = float(x_current)
-                sigma = max((self.current_region.x_max_cminv - self.current_region.x_min_cminv) / 40.0, 20.0)
+                sigma = self._default_peak_pick_sigma()
             else:
                 center = 0.5 * (x0 + x1)
                 sigma = max((x1 - x0) / 2.0, 1e-5)
@@ -845,7 +918,7 @@ class MainController:
 
     def _upsert_peak_from_click(self, x_center: float):
         amplitude = max(self._peak_signal_y(x_center), 0.0)
-        width = max((self.current_region.x_max_cminv - self.current_region.x_min_cminv) / 40.0, 20.0)
+        width = self._default_peak_pick_sigma()
         x0 = max(self.current_region.x_min_cminv, x_center - 2.0 * width)
         x1 = min(self.current_region.x_max_cminv, x_center + 2.0 * width)
         peak = self._build_peak_guess(x_center, x0, x1, amplitude)
@@ -912,6 +985,11 @@ class MainController:
     def _on_background_area_press(self, event):
         if event.inaxes is not self.widget.mpl.canvas.ax_raw or event.xdata is None:
             return
+        if event.button == 3:
+            self._remove_nearest_background_area(float(event.xdata))
+            return
+        if event.button != 1:
+            return
         self._bg_area_press_x = float(event.xdata)
         self._update_background_area_preview(float(event.xdata))
 
@@ -933,7 +1011,14 @@ class MainController:
             self._clear_background_results()
             self._populate_background_area_table()
             self._draw(preserve_limits=preserve_limits)
-        self.widget.pushButton_SelectBackgroundArea.setChecked(False)
+        self._bg_area_press_x = None
+        if self._bg_area_preview is not None:
+            try:
+                self._bg_area_preview.remove()
+            except Exception:
+                pass
+            self._bg_area_preview = None
+        self.widget.mpl.canvas.draw_idle()
 
     def _update_background_area_preview(self, x_current: float):
         ax = self.widget.mpl.canvas.ax_raw
@@ -946,6 +1031,21 @@ class MainController:
                 pass
         self._bg_area_preview = ax.axvspan(x0, x1, color="#fbbf24", alpha=0.20)
         self.widget.mpl.canvas.draw_idle()
+
+    def _remove_nearest_background_area(self, x_center: float):
+        areas = self.current_region.background.fit_areas
+        if not areas:
+            return
+        preserve_limits = self._current_plot_limits()
+        centers = [
+            abs((0.5 * (float(area.x_min_cminv) + float(area.x_max_cminv))) - float(x_center))
+            for area in areas
+        ]
+        row = int(np.argmin(centers))
+        areas.pop(row)
+        self._clear_background_results()
+        self._populate_background_area_table()
+        self._draw(preserve_limits=preserve_limits)
 
     def handle_peak_table_change(self, _item):
         table = self.widget.tableWidget_Peaks
@@ -990,6 +1090,13 @@ class MainController:
             )
         self.current_region.peaks = [self._normalized_peak_constraints(peak) for peak in peaks]
         self._clear_peak_fit_results()
+
+    def handle_section_table_change(self, item):
+        if item is None or item.column() != 1:
+            return
+        row = item.row()
+        if 0 <= row < len(self.saved_sections):
+            self.saved_sections[row].label = item.text().strip()
 
     def _update_results_table(self):
         table = self.widget.tableWidget_Results
@@ -1132,7 +1239,7 @@ class MainController:
             fit_span = float(np.nanmax(result.y_bgsub) - np.nanmin(result.y_bgsub)) if result.y_bgsub.size else 0.0
             fit_residual_span = float(np.nanmax(result.residual_bgsub) - np.nanmin(result.residual_bgsub)) if result.residual_bgsub.size else 0.0
             fit_residual_offset = float(np.nanmin(result.y_bgsub) - max(0.08 * max(fit_span, 1.0), 1.5 * fit_residual_span))
-            for peak in result.peaks:
+            for peak in sorted(result.peaks, key=lambda peak_result: float(peak_result.center_cminv)):
                 fit_ax.plot(result.x_cminv, peak.curve, linewidth=1.0, label=f"{peak.center_cminv:.0f} cm$^{{-1}}$")
             fit_ax.axhline(
                 fit_residual_offset,
@@ -1263,40 +1370,44 @@ class MainController:
         return peak
 
     def save_fit_results(self):
-        if self.spectrum is None or self.background_result is None or self.fit_result is None:
-            QtWidgets.QMessageBox.information(self.widget, "No fit result", "Run background fit and PeakFit first.")
+        if self.spectrum is None or not self.saved_sections:
+            QtWidgets.QMessageBox.information(
+                self.widget,
+                "No saved sections",
+                "Save one or more fitted sections first.",
+            )
             return
         base_dir = get_param_dir(self.spectrum.path)
-        default_base = str(Path(base_dir) / f"{Path(self.spectrum.path).stem}_fit_results")
+        default_base = str(Path(base_dir) / f"{Path(self.spectrum.path).stem}_sections")
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self.widget,
-            "Save fit results",
+            "Save section results",
             default_base,
-            "JSON (*.json);;All files (*)",
+            "Excel (*.xlsx);;JSON (*.json);;All files (*)",
         )
         if not path:
             return
         output_base = str(Path(path).with_suffix(""))
         try:
-            result = export_fit_results(
+            result = export_saved_sections(
                 output_base,
                 self.spectrum,
-                self.current_region,
-                self.background_result,
-                self.fit_result,
+                self.saved_sections,
             )
         except Exception as exc:
             QtWidgets.QMessageBox.warning(self.widget, "Save failed", str(exc))
             self.log(f"Save fit results failed: {exc}")
             return
-        self.log(f"Saved fit results to {result.json_path} and {result.excel_path}")
+        self.log(f"Saved {len(self.saved_sections)} section(s) to {result.json_path} and {result.excel_path}")
 
     def export_plot_npy(self):
         if self.spectrum is None or self.background_result is None or self.fit_result is None:
             QtWidgets.QMessageBox.information(
                 self.widget,
                 "No fit result",
-                "Run background fit and PeakFit first.",
+                "No PeakFit result is currently in queue.\n\n"
+                "Go to the Sections menu, choose a saved range, and press Set current.\n"
+                "Or run a new background fit and PeakFit before exporting.",
             )
             return
         base_dir = get_param_dir(self.spectrum.path)
@@ -1364,11 +1475,23 @@ class MainController:
             )
             return
         preserve_limits = self._current_plot_limits()
+        section_region = copy.deepcopy(self.current_region)
+        section_x_min, section_x_max = self._section_peakfit_bounds(
+            SavedSection(
+                timestamp="",
+                label=section_region.name,
+                region=section_region,
+                background_result=self.background_result,
+                fit_result=self.fit_result,
+            )
+        )
+        section_region.x_min_cminv = section_x_min
+        section_region.x_max_cminv = section_x_max
         self.saved_sections.append(
             SavedSection(
                 timestamp=dt.datetime.now().isoformat(timespec="seconds"),
-                label=self.current_region.name,
-                region=copy.deepcopy(self.current_region),
+                label=self.DEFAULT_SECTION_COMMENT,
+                region=section_region,
                 background_result=copy.deepcopy(self.background_result),
                 fit_result=copy.deepcopy(self.fit_result),
             )
@@ -1407,22 +1530,11 @@ class MainController:
             "" if self.fit_result is None else self.fit_result.fit_report
         )
         self._draw()
-        self.zoom_to_selected_section()
+        x_min, x_max = self._section_peakfit_bounds(section)
         self.log(
             f"Loaded section {section.label} "
-            f"({section.region.x_min_cminv:.2f}-{section.region.x_max_cminv:.2f} cm$^{{-1}}$) into the current queue."
+            f"({x_min:.2f}-{x_max:.2f} cm$^{{-1}}$) into the current queue."
         )
-
-    def zoom_to_selected_section(self):
-        rows = self._selected_section_rows()
-        if len(rows) != 1:
-            return
-        section = self.saved_sections[rows[0]]
-        raw_ax = self.widget.mpl.canvas.ax_raw
-        fit_ax = self.widget.mpl.canvas.ax_fit
-        raw_ax.set_xlim(section.region.x_min_cminv, section.region.x_max_cminv)
-        fit_ax.set_xlim(section.region.x_min_cminv, section.region.x_max_cminv)
-        self.find_view_minmax()
 
     def remove_selected_sections(self):
         rows = self._selected_section_rows()
@@ -1635,7 +1747,7 @@ class MainController:
             return None
         return SavedSection(
             timestamp=payload.get("timestamp", ""),
-            label=payload.get("label", region_payload.get("name", "Section")),
+            label=payload.get("label", self.DEFAULT_SECTION_COMMENT),
             region=self._region_from_payload(region_payload),
             background_result=self._background_result_from_payload(payload.get("background_result")),
             fit_result=self._fit_result_from_payload(payload.get("fit_result")),

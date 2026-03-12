@@ -320,6 +320,195 @@ def _write_xlsx(path: str, sheets: list[tuple[str, list[list[object]]]]):
         )
 
 
+def _peak_setup_rows(region: FitRegion) -> list[list[object]]:
+    setup_headers = [
+        "name",
+        "guess_min_cminv",
+        "guess_max_cminv",
+        "amplitude",
+        "amplitude_min",
+        "amplitude_max",
+        "amplitude_vary",
+        "center_cminv",
+        "center_min",
+        "center_max",
+        "center_vary",
+        "sigma_cminv",
+        "sigma_min",
+        "sigma_max",
+        "sigma_vary",
+        "fraction",
+        "fraction_min",
+        "fraction_max",
+        "fraction_vary",
+    ]
+    rows = [setup_headers]
+    for peak in region.peaks:
+        rows.append(
+            [
+                peak.name,
+                peak.guess_min_cminv,
+                peak.guess_max_cminv,
+                peak.amplitude.value,
+                peak.amplitude.min,
+                peak.amplitude.max,
+                int(peak.amplitude.vary),
+                peak.center.value,
+                peak.center.min,
+                peak.center.max,
+                int(peak.center.vary),
+                peak.sigma.value,
+                peak.sigma.min,
+                peak.sigma.max,
+                int(peak.sigma.vary),
+                peak.fraction.value,
+                peak.fraction.min,
+                peak.fraction.max,
+                int(peak.fraction.vary),
+            ]
+        )
+    return rows
+
+
+def _peak_result_rows(fit_result: FitResultBundle) -> list[list[object]]:
+    result_headers = [
+        "name",
+        "center_cminv",
+        "center_ev",
+        "amplitude",
+        "sigma_cminv",
+        "sigma_ev",
+        "fraction",
+    ]
+    rows = [result_headers]
+    for peak in fit_result.peaks:
+        rows.append(
+            [
+                peak.name,
+                peak.center_cminv,
+                peak.center_ev,
+                peak.amplitude,
+                peak.sigma_cminv,
+                peak.sigma_ev,
+                peak.fraction,
+            ]
+        )
+    return rows
+
+
+def _curve_rows(background_result: BackgroundFitResult, fit_result: FitResultBundle) -> list[list[object]]:
+    headers = [
+        "fit_x_cminv",
+        "fit_y_raw",
+        "fit_background",
+        "fit_y_bgsub",
+        "best_fit",
+        "best_fit_bgsub",
+        "residual_raw",
+        "residual_bgsub",
+    ]
+    headers.extend(f"peak_{peak.name}" for peak in fit_result.peaks)
+    rows = [headers]
+    for idx, values in enumerate(
+        zip(
+            fit_result.x_cminv,
+            fit_result.y_raw,
+            fit_result.background,
+            fit_result.y_bgsub,
+            fit_result.best_fit,
+            fit_result.best_fit_bgsub,
+            fit_result.residual_raw,
+            fit_result.residual_bgsub,
+            strict=False,
+        )
+    ):
+        row = [float(value) for value in values]
+        for peak in fit_result.peaks:
+            curve = np.asarray(peak.curve, dtype=float)
+            row.append(float(curve[idx]) if idx < curve.size else None)
+        rows.append(row)
+
+    rows.append([])
+    rows.append(["background_x_cminv", "background_y_raw", "background_curve", "background_y_bgsub", "background_mask"])
+    for values in zip(
+        background_result.x_cminv,
+        background_result.y_raw,
+        background_result.background,
+        background_result.y_bgsub,
+        background_result.area_mask,
+        strict=False,
+    ):
+        rows.append(
+            [
+                float(values[0]),
+                float(values[1]),
+                float(values[2]),
+                float(values[3]),
+                int(values[4]),
+            ]
+        )
+    return rows
+
+
+def _section_sheet_name(index: int, section: SavedSection, used_names: set[str]) -> str:
+    base = (section.label or section.region.name or f"Section {index}").strip() or f"Section {index}"
+    safe = "".join("_" if ch in '[]:*?/\\' else ch for ch in base)
+    safe = safe[:31] or f"Section {index}"
+    candidate = safe
+    suffix = 1
+    while candidate in used_names:
+        tail = f"_{suffix}"
+        candidate = f"{safe[: max(0, 31 - len(tail))]}{tail}" or f"Section_{index}_{suffix}"
+        suffix += 1
+    used_names.add(candidate)
+    return candidate
+
+
+def _section_sheet_rows(section: SavedSection, spectrum: SpectrumData) -> list[list[object]]:
+    if section.background_result is None or section.fit_result is None:
+        raise ValueError("Saved sections must include both background and peak-fit results for XLS export.")
+
+    region = section.region
+    background_result = section.background_result
+    fit_result = section.fit_result
+    xbg_values = np.asarray(background_result.x_cminv, dtype=float)
+    xpfit_values = np.asarray(fit_result.x_cminv, dtype=float)
+    xbg_min = float(np.nanmin(xbg_values)) if xbg_values.size else None
+    xbg_max = float(np.nanmax(xbg_values)) if xbg_values.size else None
+    xpfit_min = float(np.nanmin(xpfit_values)) if xpfit_values.size else None
+    xpfit_max = float(np.nanmax(xpfit_values)) if xpfit_values.size else None
+
+    rows: list[list[object]] = [
+        ["Saved", section.timestamp],
+        ["Comment", section.label],
+        ["Spectrum path", spectrum.path],
+        ["Spectrum title", spectrum.title],
+        ["Source kind", spectrum.source_kind],
+        ["Region name", region.name],
+        ["xbg min", xbg_min],
+        ["xbg max", xbg_max],
+        ["xpfit min", xpfit_min],
+        ["xpfit max", xpfit_max],
+        ["Background success", int(background_result.success)],
+        ["Background redchi", background_result.redchi],
+        ["Fit success", int(fit_result.success)],
+        ["Fit chisqr", fit_result.chisqr],
+        ["Fit redchi", fit_result.redchi],
+        ["Fit aic", fit_result.aic],
+        ["Fit bic", fit_result.bic],
+        [],
+        ["Peak setup"],
+    ]
+    rows.extend(_peak_setup_rows(region))
+    rows.append([])
+    rows.append(["Peak results"])
+    rows.extend(_peak_result_rows(fit_result))
+    rows.append([])
+    rows.append(["Curves"])
+    rows.extend(_curve_rows(background_result, fit_result))
+    return rows
+
+
 def export_fit_results(
     output_base: str,
     spectrum: SpectrumData,
@@ -452,6 +641,45 @@ def export_fit_results(
             ("curves", curve_rows),
         ],
     )
+    return ExportResult(json_path=json_path, excel_path=excel_path)
+
+
+def export_saved_sections(
+    output_base: str,
+    spectrum: SpectrumData,
+    saved_sections: list[SavedSection],
+) -> ExportResult:
+    if not saved_sections:
+        raise ValueError("No saved sections available for export.")
+
+    export_sections = []
+    sheets: list[tuple[str, list[list[object]]]] = []
+    used_sheet_names: set[str] = set()
+    for index, section in enumerate(saved_sections, start=1):
+        if section.background_result is None or section.fit_result is None:
+            continue
+        export_sections.append(asdict(section))
+        sheet_name = _section_sheet_name(index, section, used_sheet_names)
+        sheets.append((sheet_name, _section_sheet_rows(section, spectrum)))
+
+    if not sheets:
+        raise ValueError("Saved sections do not contain complete background and peak-fit results.")
+
+    json_path = f"{output_base}.json"
+    excel_path = f"{output_base}.xlsx"
+    payload = {
+        "format_family": "vibfit-sections-export",
+        "format_version": 1,
+        "created_at": dt.datetime.now().isoformat(timespec="seconds"),
+        "spectrum": {
+            "path": spectrum.path,
+            "title": spectrum.title,
+            "source_kind": spectrum.source_kind,
+        },
+        "saved_sections": export_sections,
+    }
+    _atomic_write_json(json_path, payload)
+    _write_xlsx(excel_path, sheets)
     return ExportResult(json_path=json_path, excel_path=excel_path)
 
 
