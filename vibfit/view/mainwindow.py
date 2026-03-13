@@ -109,14 +109,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _build_toolbar(self, parent_layout):
         toolbar_row = QtWidgets.QHBoxLayout()
+        self.toolButton_Full = QtWidgets.QPushButton("Full")
+        self.toolButton_Full.setToolTip("Show full x/y range")
         self.toolButton_ZoomOut = QtWidgets.QPushButton("Zoom out")
-        self.toolButton_ZoomOut.setToolTip("Zoom out")
+        self.toolButton_ZoomOut.setToolTip("Expand current x-range by 10% on each side")
         self.toolButton_ZoomIn = QtWidgets.QPushButton("Zoom in")
         self.toolButton_ZoomIn.setToolTip("Zoom to active fit area")
         self.pushButton_AdjustYForSpectrum = QtWidgets.QPushButton("Yspec")
         self.pushButton_FindViewMinMax = QtWidgets.QPushButton("Yadj")
         self.pushButton_SaveSession = QtWidgets.QPushButton("Save")
         toolbar_buttons = (
+            self.toolButton_Full,
             self.toolButton_ZoomOut,
             self.toolButton_ZoomIn,
             self.pushButton_AdjustYForSpectrum,
@@ -129,6 +132,7 @@ class MainWindow(QtWidgets.QMainWindow):
             button.setFont(base_font)
             button.setMinimumHeight(target_height)
         for button in (
+            self.toolButton_Full,
             self.toolButton_ZoomOut,
             self.toolButton_ZoomIn,
             self.pushButton_AdjustYForSpectrum,
@@ -349,7 +353,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tableWidget_Peaks.verticalHeader().setVisible(False)
         self.tableWidget_Peaks.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
         self.tableWidget_Peaks.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
-        layout.addWidget(self.tableWidget_Peaks, 2)
+        layout.addWidget(self.tableWidget_Peaks, 1)
 
         layout.addWidget(QtWidgets.QLabel("Fit result"))
 
@@ -358,14 +362,16 @@ class MainWindow(QtWidgets.QMainWindow):
             ["Peak", "Center (cm^-1)", "Amplitude", "Sigma (cm^-1)", "Fraction"]
         )
         results_header = self.tableWidget_Results.horizontalHeader()
-        results_header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        results_header.setStretchLastSection(True)
+        results_header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Stretch)
         self.tableWidget_Results.verticalHeader().setVisible(False)
         layout.addWidget(self.tableWidget_Results, 1)
 
-        self.plainTextEdit_FitReport = QtWidgets.QPlainTextEdit()
-        self.plainTextEdit_FitReport.setReadOnly(True)
-        layout.addWidget(self.plainTextEdit_FitReport, 1)
+        fit_result_buttons = QtWidgets.QHBoxLayout()
+        self.pushButton_UseFitResultForInitial = QtWidgets.QPushButton("Use fit result for initial")
+        self.pushButton_ImportFitResultForInitial = QtWidgets.QPushButton("Import fit result for initial")
+        fit_result_buttons.addWidget(self.pushButton_UseFitResultForInitial, 1)
+        fit_result_buttons.addWidget(self.pushButton_ImportFitResultForInitial, 1)
+        layout.addLayout(fit_result_buttons)
 
         self.tabs.addTab(tab, "PeakFit")
 

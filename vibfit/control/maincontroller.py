@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import datetime as dt
+import json
 from pathlib import Path
 
 import numpy as np
@@ -74,7 +75,8 @@ class MainController:
     def connect_channel(self):
         self.widget.pushButton_LoadSpectrum.clicked.connect(self.load_spectrum_from_dialog)
         self.widget.pushButton_SetFitRange.toggled.connect(self._toggle_fit_range_selector)
-        self.widget.toolButton_ZoomOut.clicked.connect(self.zoom_out_full_region)
+        self.widget.toolButton_Full.clicked.connect(self.show_full_range)
+        self.widget.toolButton_ZoomOut.clicked.connect(self.zoom_out_current_view)
         self.widget.toolButton_ZoomIn.clicked.connect(self.zoom_in_active_region)
         self.widget.pushButton_AdjustYForSpectrum.clicked.connect(self.adjust_y_for_spectrum)
         self.widget.pushButton_FindViewMinMax.clicked.connect(self.find_view_minmax)
@@ -91,6 +93,8 @@ class MainController:
         self.widget.pushButton_SaveFitResults.clicked.connect(self.save_fit_results)
         self.widget.pushButton_ExportNPY.clicked.connect(self.export_plot_npy)
         self.widget.pushButton_Fit.clicked.connect(self.fit_region)
+        self.widget.pushButton_UseFitResultForInitial.clicked.connect(self.use_fit_result_for_initial)
+        self.widget.pushButton_ImportFitResultForInitial.clicked.connect(self.import_fit_result_for_initial)
         self.widget.pushButton_SectionSetCurrent.clicked.connect(self.set_selected_section_current)
         self.widget.pushButton_SectionRemove.clicked.connect(self.remove_selected_sections)
         self.widget.pushButton_SectionClear.clicked.connect(self.clear_section_list)
@@ -141,7 +145,6 @@ class MainController:
         self.saved_sections = []
         self.widget.tableWidget_Results.setRowCount(0)
         self.widget.plainTextEdit_BackgroundReport.clear()
-        self.widget.plainTextEdit_FitReport.clear()
         self._populate_background_area_table()
         self._populate_peak_table()
         self._populate_sections_table()
@@ -200,7 +203,6 @@ class MainController:
         self._populate_peak_table()
         self.fit_result = None
         self.widget.tableWidget_Results.setRowCount(0)
-        self.widget.plainTextEdit_FitReport.clear()
         self._draw(preserve_limits=preserve_limits)
 
     def fit_background_model(self):
@@ -224,7 +226,6 @@ class MainController:
             return
         self.fit_result = None
         self.widget.tableWidget_Results.setRowCount(0)
-        self.widget.plainTextEdit_FitReport.clear()
         self.widget.plainTextEdit_BackgroundReport.setPlainText(self.background_result.fit_report)
         self._draw(preserve_limits={"raw_xlim": preserve_limits["raw_xlim"], "fit_xlim": preserve_limits["fit_xlim"]})
         self.find_view_minmax()
@@ -242,6 +243,14 @@ class MainController:
         if self.background_result is None:
             QtWidgets.QMessageBox.information(self.widget, "Background first", "Fit the background before running PeakFit.")
             return
+        duplicate_names = self._duplicate_peak_names()
+        if duplicate_names:
+            QtWidgets.QMessageBox.warning(
+                self.widget,
+                "Duplicate peak names",
+                "Change overlapping peak names before fitting:\n" + ", ".join(duplicate_names),
+            )
+            return
         preserve_limits = self._current_plot_limits()
         self._clear_peakfit_mouse_modes()
         try:
@@ -251,7 +260,6 @@ class MainController:
             self.log(f"Fit failed: {exc}")
             return
         self._update_results_table()
-        self.widget.plainTextEdit_FitReport.setPlainText(self.fit_result.fit_report)
         self._draw(
             preserve_limits={
                 "raw_xlim": preserve_limits["raw_xlim"],
@@ -260,6 +268,8 @@ class MainController:
             }
         )
         self._autoscale_bottom_panel()
+        self.log("[PeakFit report]")
+        self.widget.status_box.appendPlainText(self.fit_result.fit_report.strip())
         self.log(
             f"Fit complete for {self.fit_result.region_name}: "
             f"redchi={self.fit_result.redchi:.4g}, aic={self.fit_result.aic:.4g}, bic={self.fit_result.bic:.4g}"
@@ -502,7 +512,7 @@ class MainController:
         fit_ax.set_ylim(fit_min, fit_max)
         self.widget.mpl.canvas.draw_idle()
 
-    def zoom_out_full_region(self):
+    def show_full_range(self):
         if self.spectrum is None:
             return
         raw_ax = self.widget.mpl.canvas.ax_raw
@@ -512,6 +522,18 @@ class MainController:
             return
         raw_ax.set_xlim(float(np.nanmin(x_values)), float(np.nanmax(x_values)))
         fit_ax.set_xlim(float(np.nanmin(x_values)), float(np.nanmax(x_values)))
+        self.find_view_minmax()
+
+    def zoom_out_current_view(self):
+        if self.spectrum is None:
+            return
+        raw_ax = self.widget.mpl.canvas.ax_raw
+        fit_ax = self.widget.mpl.canvas.ax_fit
+        x_min, x_max = raw_ax.get_xlim()
+        span = max(float(x_max) - float(x_min), 1e-9)
+        pad = 0.1 * span
+        raw_ax.set_xlim(float(x_min) - pad, float(x_max) + pad)
+        fit_ax.set_xlim(float(x_min) - pad, float(x_max) + pad)
         self.find_view_minmax()
 
     def zoom_in_active_region(self):
@@ -581,6 +603,7 @@ class MainController:
             return
         preserve_limits = self._current_plot_limits()
         self.current_region.background.fit_areas.pop(row)
+        self._reset_background_area_gesture()
         self._clear_background_results()
         self._populate_background_area_table()
         self._draw(preserve_limits=preserve_limits)
@@ -590,6 +613,7 @@ class MainController:
             return
         preserve_limits = self._current_plot_limits()
         self.current_region.background.fit_areas = []
+        self._reset_background_area_gesture()
         self.widget.pushButton_PickPeaks.setChecked(False)
         self._clear_background_results()
         self._populate_background_area_table()
@@ -602,12 +626,10 @@ class MainController:
         self.fit_result = None
         self.widget.plainTextEdit_BackgroundReport.clear()
         self.widget.tableWidget_Results.setRowCount(0)
-        self.widget.plainTextEdit_FitReport.clear()
 
     def _clear_peak_fit_results(self):
         self.fit_result = None
         self.widget.tableWidget_Results.setRowCount(0)
-        self.widget.plainTextEdit_FitReport.clear()
 
     def _activate_fit_range_selector(self):
         if self.spectrum is None:
@@ -938,15 +960,16 @@ class MainController:
         row = self._selected_peak_index()
         name = self.current_region.peaks[row].name if row is not None else f"p{len(self.current_region.peaks) + 1}"
         model_amplitude = self._pseudo_voigt_height_to_amplitude(max(amplitude, 0.0), sigma, 0.5)
-        amp_min, amp_max = self._default_bounds(model_amplitude, lower_floor=0.0)
+        model_amplitude = max(model_amplitude, 0.0)
+        amp_min, amp_max = 0.0, 2.0 * model_amplitude
         center_min, center_max = self._default_bounds(center, lower_floor=0.0)
-        sigma_min, sigma_max = self._default_bounds(sigma, lower_floor=0.0)
+        sigma_min, sigma_max = 0.0, 5.0 * sigma
         fraction_min, fraction_max = 0.0, 1.0
         return PeakSpec(
             name=name,
             guess_min_cminv=x_min,
             guess_max_cminv=x_max,
-            amplitude=ParameterConstraint(value=max(model_amplitude, 0.0), vary=True, min=amp_min, max=amp_max),
+            amplitude=ParameterConstraint(value=model_amplitude, vary=True, min=amp_min, max=amp_max),
             center=ParameterConstraint(value=max(float(center), 0.0), vary=True, min=center_min, max=center_max),
             sigma=ParameterConstraint(value=sigma, vary=True, min=sigma_min, max=sigma_max),
             fraction=ParameterConstraint(value=0.5, vary=True, min=fraction_min, max=fraction_max),
@@ -1011,14 +1034,7 @@ class MainController:
             self._clear_background_results()
             self._populate_background_area_table()
             self._draw(preserve_limits=preserve_limits)
-        self._bg_area_press_x = None
-        if self._bg_area_preview is not None:
-            try:
-                self._bg_area_preview.remove()
-            except Exception:
-                pass
-            self._bg_area_preview = None
-        self.widget.mpl.canvas.draw_idle()
+        self._reset_background_area_gesture()
 
     def _update_background_area_preview(self, x_current: float):
         ax = self.widget.mpl.canvas.ax_raw
@@ -1032,6 +1048,16 @@ class MainController:
         self._bg_area_preview = ax.axvspan(x0, x1, color="#fbbf24", alpha=0.20)
         self.widget.mpl.canvas.draw_idle()
 
+    def _reset_background_area_gesture(self):
+        self._bg_area_press_x = None
+        if self._bg_area_preview is not None:
+            try:
+                self._bg_area_preview.remove()
+            except Exception:
+                pass
+            self._bg_area_preview = None
+        self.widget.mpl.canvas.draw_idle()
+
     def _remove_nearest_background_area(self, x_center: float):
         areas = self.current_region.background.fit_areas
         if not areas:
@@ -1043,6 +1069,7 @@ class MainController:
         ]
         row = int(np.argmin(centers))
         areas.pop(row)
+        self._reset_background_area_gesture()
         self._clear_background_results()
         self._populate_background_area_table()
         self._draw(preserve_limits=preserve_limits)
@@ -1097,6 +1124,190 @@ class MainController:
         row = item.row()
         if 0 <= row < len(self.saved_sections):
             self.saved_sections[row].label = item.text().strip()
+
+    def _duplicate_peak_names(self) -> list[str]:
+        counts: dict[str, int] = {}
+        display_names: dict[str, str] = {}
+        for peak in self.current_region.peaks:
+            name = peak.name.strip()
+            if not name:
+                continue
+            key = name.casefold()
+            counts[key] = counts.get(key, 0) + 1
+            display_names.setdefault(key, name)
+        return [display_names[key] for key, count in counts.items() if count > 1]
+
+    def use_fit_result_for_initial(self):
+        if self.fit_result is None:
+            QtWidgets.QMessageBox.information(
+                self.widget,
+                "No fit result",
+                "Run PeakFit first or load a saved section into the current queue.",
+            )
+            return
+        self._apply_fit_result_to_initial(self.fit_result)
+        self.log("Applied current fit results to the fitting setup as new initial values.")
+
+    def _apply_fit_result_to_initial(self, fit_result: FitResultBundle):
+        result_by_name = {peak.name: peak for peak in fit_result.peaks}
+        updated_peaks: list[PeakSpec] = []
+        for peak in self.current_region.peaks:
+            fit_peak = result_by_name.get(peak.name)
+            if fit_peak is None:
+                updated_peaks.append(peak)
+                continue
+            center_value = max(float(fit_peak.center_cminv), 0.0)
+            sigma_value = max(float(fit_peak.sigma_cminv), 1e-5)
+            amplitude_value = max(float(fit_peak.amplitude), 0.0)
+            guess_half_width = max(2.0 * sigma_value, 1e-5)
+            guess_min = max(self.current_region.x_min_cminv, center_value - guess_half_width)
+            guess_max = min(self.current_region.x_max_cminv, center_value + guess_half_width)
+            center_min, center_max = self._default_bounds(center_value, lower_floor=0.0)
+            updated_peaks.append(
+                PeakSpec(
+                    name=peak.name,
+                    guess_min_cminv=guess_min,
+                    guess_max_cminv=max(guess_max, guess_min),
+                    amplitude=ParameterConstraint(
+                        value=amplitude_value,
+                        vary=peak.amplitude.vary,
+                        min=0.0,
+                        max=2.0 * amplitude_value,
+                    ),
+                    center=ParameterConstraint(
+                        value=center_value,
+                        vary=peak.center.vary,
+                        min=center_min,
+                        max=center_max,
+                    ),
+                    sigma=ParameterConstraint(
+                        value=sigma_value,
+                        vary=peak.sigma.vary,
+                        min=0.0,
+                        max=5.0 * sigma_value,
+                    ),
+                    fraction=ParameterConstraint(
+                        value=min(max(float(fit_peak.fraction), 0.0), 1.0),
+                        vary=peak.fraction.vary,
+                        min=0.0,
+                        max=1.0,
+                    ),
+                )
+            )
+        self.current_region.peaks = [self._normalized_peak_constraints(peak) for peak in updated_peaks]
+        self._populate_peak_table()
+
+    def import_fit_result_for_initial(self):
+        if self.spectrum is None:
+            QtWidgets.QMessageBox.information(self.widget, "No spectrum", "Load a spectrum first.")
+            return
+        setup_not_empty = bool(self.current_region.peaks or self.current_region.background.fit_areas or self.fit_result is not None)
+        if setup_not_empty:
+            answer = QtWidgets.QMessageBox.question(
+                self.widget,
+                "Clear existing fitting setup?",
+                "Fitting setup is not empty. Clear the existing setup before importing?",
+                QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+                QtWidgets.QMessageBox.StandardButton.Yes,
+            )
+            if answer != QtWidgets.QMessageBox.StandardButton.Yes:
+                return
+
+        start_dir = get_param_dir(self.spectrum.path)
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self.widget,
+            "Open vibfit session JSON",
+            start_dir,
+            "JSON (*.json);;All files (*)",
+        )
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self.widget, "Import failed", str(exc))
+            self.log(f"Import fit result failed: {exc}")
+            return
+
+        sections = []
+        for section_payload in payload.get("saved_sections", []) or []:
+            section = self._saved_section_from_payload(section_payload)
+            if section is not None and section.background_result is not None and section.fit_result is not None:
+                sections.append(section)
+
+        if not sections and payload.get("background_result") and payload.get("fit_result"):
+            region_payload = payload.get("region")
+            if region_payload:
+                section = SavedSection(
+                    timestamp="",
+                    label=payload.get("label", Path(path).stem),
+                    region=self._region_from_payload(region_payload),
+                    background_result=self._background_result_from_payload(payload.get("background_result")),
+                    fit_result=self._fit_result_from_payload(payload.get("fit_result")),
+                )
+                sections.append(section)
+
+        if not sections:
+            QtWidgets.QMessageBox.warning(
+                self.widget,
+                "Import failed",
+                "No saved section with background and peak-fit results was found in that JSON file.",
+            )
+            return
+
+        selected_section = sections[0]
+        if len(sections) > 1:
+            options = []
+            for idx, section in enumerate(sections, start=1):
+                x_min, x_max = self._section_peakfit_bounds(section)
+                options.append(f"{idx}. {section.label} ({x_min:.2f}-{x_max:.2f} cm^-1)")
+            choice, ok = QtWidgets.QInputDialog.getItem(
+                self.widget,
+                "Select section to import",
+                "Section:",
+                options,
+                0,
+                False,
+            )
+            if not ok or not choice:
+                return
+            selected_section = sections[options.index(choice)]
+
+        preserve_limits = self._current_plot_limits()
+        self.current_region = copy.deepcopy(selected_section.region)
+        self._clear_peakfit_mouse_modes()
+        self._clear_background_mouse_mode()
+        self._clear_background_results()
+        self._populate_background_area_table()
+
+        try:
+            self.background_result = fit_background(self.current_region, self.spectrum)
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(
+                self.widget,
+                "Background fit failed",
+                f"Imported background areas could not be fitted on the current spectrum:\n{exc}",
+            )
+            self.log(f"Imported background fit failed: {exc}")
+            self._draw(preserve_limits=preserve_limits)
+            return
+
+        self.widget.plainTextEdit_BackgroundReport.setPlainText(self.background_result.fit_report)
+        self._apply_fit_result_to_initial(selected_section.fit_result)
+        self._clear_peak_fit_results()
+        self._draw(
+            preserve_limits={
+                "raw_xlim": preserve_limits["raw_xlim"],
+                "raw_ylim": preserve_limits["raw_ylim"],
+                "fit_xlim": preserve_limits["fit_xlim"],
+            }
+        )
+        self._autoscale_bottom_panel()
+        self.log(
+            f"Imported initial values from section {selected_section.label} "
+            f"({self.current_region.x_min_cminv:.2f}-{self.current_region.x_max_cminv:.2f} cm^{{-1}}$)."
+        )
 
     def _update_results_table(self):
         table = self.widget.tableWidget_Results
@@ -1157,8 +1368,9 @@ class MainController:
                     alpha=0.12,
                     label=label,
                 )
-            for peak in region.peaks:
-                raw_ax.axvspan(peak.guess_min_cminv, peak.guess_max_cminv, color="#10b981", alpha=0.08)
+            if self.fit_result is None:
+                for peak in region.peaks:
+                    raw_ax.axvspan(peak.guess_min_cminv, peak.guess_max_cminv, color="#10b981", alpha=0.08)
 
         if self.background_result is not None:
             bg = self.background_result
@@ -1526,10 +1738,11 @@ class MainController:
             "" if self.background_result is None else self.background_result.fit_report
         )
         self._update_results_table()
-        self.widget.plainTextEdit_FitReport.setPlainText(
-            "" if self.fit_result is None else self.fit_result.fit_report
-        )
         self._draw()
+        self.find_view_minmax()
+        if self.fit_result is not None and self.fit_result.fit_report.strip():
+            self.log("[PeakFit report]")
+            self.widget.status_box.appendPlainText(self.fit_result.fit_report.strip())
         x_min, x_max = self._section_peakfit_bounds(section)
         self.log(
             f"Loaded section {section.label} "
@@ -1639,9 +1852,6 @@ class MainController:
             "" if self.background_result is None else self.background_result.fit_report
         )
         self._update_results_table()
-        self.widget.plainTextEdit_FitReport.setPlainText(
-            "" if self.fit_result is None else self.fit_result.fit_report
-        )
         self._draw()
 
     def _region_from_payload(self, region_payload):
