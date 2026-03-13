@@ -80,7 +80,10 @@ class MainController:
         self.widget.toolButton_ZoomIn.clicked.connect(self.zoom_in_active_region)
         self.widget.pushButton_AdjustYForSpectrum.clicked.connect(self.adjust_y_for_spectrum)
         self.widget.pushButton_FindViewMinMax.clicked.connect(self.find_view_minmax)
+        self.widget.pushButton_ClearAll.clicked.connect(self.clear_all_fitting_setup)
         self.widget.pushButton_ApplyView.clicked.connect(self.apply_view_limits)
+        self.widget.checkBox_ShowPeakNameInLegend.toggled.connect(lambda _checked: self._draw(preserve_limits=self._current_plot_limits()))
+        self.widget.checkBox_FullPathForFilename.toggled.connect(lambda _checked: self._draw(preserve_limits=self._current_plot_limits()))
         self.widget.pushButton_SelectBackgroundArea.toggled.connect(self._toggle_background_area_selector)
         self.widget.pushButton_RemoveBackgroundArea.clicked.connect(self.remove_selected_background_area)
         self.widget.pushButton_ClearBackgroundAreas.clicked.connect(self.clear_background_areas)
@@ -88,6 +91,7 @@ class MainController:
         self.widget.pushButton_PickPeaks.toggled.connect(self._toggle_peak_picker)
         self.widget.pushButton_ClearPeaks.clicked.connect(self.clear_peaks)
         self.widget.pushButton_RemovePeak.clicked.connect(self.remove_peak)
+        self.widget.pushButton_EditPeakSetup.clicked.connect(self.edit_peak_setup)
         self.widget.pushButton_ClearFitRange.clicked.connect(self.clear_fit_range)
         self.widget.pushButton_SaveToSection.clicked.connect(self.save_to_section)
         self.widget.pushButton_SaveFitResults.clicked.connect(self.save_fit_results)
@@ -95,6 +99,7 @@ class MainController:
         self.widget.pushButton_Fit.clicked.connect(self.fit_region)
         self.widget.pushButton_UseFitResultForInitial.clicked.connect(self.use_fit_result_for_initial)
         self.widget.pushButton_ImportFitResultForInitial.clicked.connect(self.import_fit_result_for_initial)
+        self.widget.dialog_PeakSetup.pushButton_RenamePeakNamesDefault.clicked.connect(self.rename_peak_setup_dialog_names)
         self.widget.pushButton_SectionSetCurrent.clicked.connect(self.set_selected_section_current)
         self.widget.pushButton_SectionRemove.clicked.connect(self.remove_selected_sections)
         self.widget.pushButton_SectionClear.clicked.connect(self.clear_section_list)
@@ -108,6 +113,9 @@ class MainController:
         self.widget.show()
         self.widget.raise_()
         self.widget.activateWindow()
+        self.widget.mpl.canvas.draw()
+        self.widget.mpl.ntb.update()
+        self.widget.mpl.canvas.setFocus()
 
     def log(self, message: str):
         self.widget.status_box.appendPlainText(message)
@@ -144,7 +152,6 @@ class MainController:
         self.fit_result = None
         self.saved_sections = []
         self.widget.tableWidget_Results.setRowCount(0)
-        self.widget.plainTextEdit_BackgroundReport.clear()
         self._populate_background_area_table()
         self._populate_peak_table()
         self._populate_sections_table()
@@ -226,9 +233,10 @@ class MainController:
             return
         self.fit_result = None
         self.widget.tableWidget_Results.setRowCount(0)
-        self.widget.plainTextEdit_BackgroundReport.setPlainText(self.background_result.fit_report)
         self._draw(preserve_limits={"raw_xlim": preserve_limits["raw_xlim"], "fit_xlim": preserve_limits["fit_xlim"]})
         self.find_view_minmax()
+        self.log("[Background report]")
+        self.widget.status_box.appendPlainText(self.background_result.fit_report.strip())
         self.log(
             "Background fit complete: "
             f"redchi={self.background_result.redchi:.4g}, "
@@ -253,27 +261,49 @@ class MainController:
             return
         preserve_limits = self._current_plot_limits()
         self._clear_peakfit_mouse_modes()
-        try:
-            self.fit_result = build_fit(self.current_region, self.spectrum, self.background_result)
-        except Exception as exc:
-            QtWidgets.QMessageBox.warning(self.widget, "Fit failed", str(exc))
-            self.log(f"Fit failed: {exc}")
-            return
-        self._update_results_table()
-        self._draw(
-            preserve_limits={
-                "raw_xlim": preserve_limits["raw_xlim"],
-                "raw_ylim": preserve_limits["raw_ylim"],
-                "fit_xlim": preserve_limits["fit_xlim"],
-            }
-        )
-        self._autoscale_bottom_panel()
-        self.log("[PeakFit report]")
-        self.widget.status_box.appendPlainText(self.fit_result.fit_report.strip())
-        self.log(
-            f"Fit complete for {self.fit_result.region_name}: "
-            f"redchi={self.fit_result.redchi:.4g}, aic={self.fit_result.aic:.4g}, bic={self.fit_result.bic:.4g}"
-        )
+        attempt = 1
+        while True:
+            try:
+                self.fit_result = build_fit(self.current_region, self.spectrum, self.background_result)
+            except Exception as exc:
+                QtWidgets.QMessageBox.warning(self.widget, "Fit failed", str(exc))
+                self.log(f"Fit failed: {exc}")
+                return
+            self._update_results_table()
+            self._draw(
+                preserve_limits={
+                    "raw_xlim": preserve_limits["raw_xlim"],
+                    "raw_ylim": preserve_limits["raw_ylim"],
+                    "fit_xlim": preserve_limits["fit_xlim"],
+                }
+            )
+            self._autoscale_bottom_panel()
+            self.log("[PeakFit report]")
+            self.widget.status_box.appendPlainText(self.fit_result.fit_report.strip())
+            self.log(
+                f"Fit complete for {self.fit_result.region_name}: "
+                f"redchi={self.fit_result.redchi:.4g}, aic={self.fit_result.aic:.4g}, bic={self.fit_result.bic:.4g}"
+            )
+            if self.fit_result.success:
+                QtWidgets.QMessageBox.information(
+                    self.widget,
+                    "PeakFit converged",
+                    "Convergence achieved.",
+                )
+                break
+            answer = QtWidgets.QMessageBox.question(
+                self.widget,
+                "PeakFit did not converge",
+                "Peak fitting did not converge.\n\nUse the current fit result as new initial values and continue fitting?",
+                QtWidgets.QMessageBox.StandardButton.Yes | QtWidgets.QMessageBox.StandardButton.No,
+                QtWidgets.QMessageBox.StandardButton.Yes,
+            )
+            if answer != QtWidgets.QMessageBox.StandardButton.Yes:
+                break
+            self._apply_fit_result_to_initial(self.fit_result)
+            self._populate_peak_table()
+            attempt += 1
+            self.log(f"Retrying PeakFit with updated initial values (attempt {attempt}).")
 
     def _toggle_fit_range_selector(self, checked: bool):
         if checked:
@@ -291,25 +321,17 @@ class MainController:
             values = [
                 peak.name,
                 f"{peak.amplitude.value:.4g}",
-                f"{self._constraint_minimum(peak.amplitude):.4g}",
-                "" if peak.amplitude.max is None else f"{peak.amplitude.max:.4g}",
                 f"{peak.center.value:.2f}",
-                f"{self._constraint_minimum(peak.center):.2f}",
-                "" if peak.center.max is None else f"{peak.center.max:.2f}",
                 f"{peak.sigma.value:.2f}",
-                f"{self._constraint_minimum(peak.sigma):.2f}",
-                "" if peak.sigma.max is None else f"{peak.sigma.max:.2f}",
                 f"{peak.fraction.value:.4g}",
-                f"{self._constraint_minimum(peak.fraction):.4g}",
-                "" if peak.fraction.max is None else f"{peak.fraction.max:.4g}",
             ]
-            text_columns = [0, 2, 3, 4, 6, 7, 8, 10, 11, 12, 14, 15, 16]
+            text_columns = [0, 2, 4, 6, 8]
             for col, text in zip(text_columns, values, strict=False):
                 table.setItem(row, col, QtWidgets.QTableWidgetItem(text))
             self._set_vary_checkbox(row, 1, peak.amplitude.vary)
-            self._set_vary_checkbox(row, 5, peak.center.vary)
-            self._set_vary_checkbox(row, 9, peak.sigma.vary)
-            self._set_vary_checkbox(row, 13, peak.fraction.vary)
+            self._set_vary_checkbox(row, 3, peak.center.vary)
+            self._set_vary_checkbox(row, 5, peak.sigma.vary)
+            self._set_vary_checkbox(row, 7, peak.fraction.vary)
         table.blockSignals(False)
 
     def _populate_background_area_table(self):
@@ -327,13 +349,10 @@ class MainController:
         table.blockSignals(True)
         table.setRowCount(len(self.saved_sections))
         for row, section in enumerate(self.saved_sections):
-            xbg_min, xbg_max = self._section_background_bounds(section)
             xpfit_min, xpfit_max = self._section_peakfit_bounds(section)
             values = [
                 section.timestamp,
                 section.label,
-                f"{xbg_min:.2f}" if xbg_min is not None else "",
-                f"{xbg_max:.2f}" if xbg_max is not None else "",
                 f"{xpfit_min:.2f}" if xpfit_min is not None else "",
                 f"{xpfit_max:.2f}" if xpfit_max is not None else "",
                 str(len(section.region.peaks)),
@@ -397,6 +416,8 @@ class MainController:
         raw_ax = self.widget.mpl.canvas.ax_raw
         fit_ax = self.widget.mpl.canvas.ax_fit
         controls = [
+            (self.widget.doubleSpinBox_XMin, raw_ax.get_xlim()[0]),
+            (self.widget.doubleSpinBox_XMax, raw_ax.get_xlim()[1]),
             (self.widget.doubleSpinBox_TopYMin, raw_ax.get_ylim()[0]),
             (self.widget.doubleSpinBox_TopYMax, raw_ax.get_ylim()[1]),
             (self.widget.doubleSpinBox_BottomYMin, fit_ax.get_ylim()[0]),
@@ -499,17 +520,22 @@ class MainController:
             self.widget.mpl.canvas.draw_idle()
 
     def apply_view_limits(self):
+        x_min = self.widget.doubleSpinBox_XMin.value()
+        x_max = self.widget.doubleSpinBox_XMax.value()
         raw_min = self.widget.doubleSpinBox_TopYMin.value()
         raw_max = self.widget.doubleSpinBox_TopYMax.value()
         fit_min = self.widget.doubleSpinBox_BottomYMin.value()
         fit_max = self.widget.doubleSpinBox_BottomYMax.value()
-        if raw_max <= raw_min or fit_max <= fit_min:
+        if x_max <= x_min or raw_max <= raw_min or fit_max <= fit_min:
             QtWidgets.QMessageBox.warning(self.widget, "Invalid limits", "Each max must be greater than its min.")
             return
         raw_ax = self.widget.mpl.canvas.ax_raw
         fit_ax = self.widget.mpl.canvas.ax_fit
+        raw_ax.set_xlim(x_min, x_max)
+        fit_ax.set_xlim(x_min, x_max)
         raw_ax.set_ylim(raw_min, raw_max)
         fit_ax.set_ylim(fit_min, fit_max)
+        self._sync_view_controls_from_axes()
         self.widget.mpl.canvas.draw_idle()
 
     def show_full_range(self):
@@ -597,6 +623,26 @@ class MainController:
         self._sync_view_controls_from_axes()
         self.widget.mpl.canvas.draw_idle()
 
+    def clear_all_fitting_setup(self):
+        if self.spectrum is None:
+            return
+        x_values = np.asarray(self.spectrum.x_cminv, dtype=float)
+        self._clear_peakfit_mouse_modes()
+        self._clear_background_mouse_mode()
+        self._reset_background_area_gesture()
+        if x_values.size:
+            self.current_region.x_min_cminv = float(np.nanmin(x_values))
+            self.current_region.x_max_cminv = float(np.nanmax(x_values))
+        self.current_region.background.fit_areas = []
+        self.current_region.peaks = []
+        self._clear_background_results()
+        self._populate_background_area_table()
+        self._populate_peak_table()
+        self._populate_sections_table()
+        self._draw()
+        self.show_full_range()
+        self.log("Cleared background setup, peak setup, and active fit results. Saved sections were kept.")
+
     def remove_selected_background_area(self):
         row = self.widget.tableWidget_BackgroundAreas.currentRow()
         if row < 0 or row >= len(self.current_region.background.fit_areas):
@@ -624,7 +670,6 @@ class MainController:
             self.widget.pushButton_PickPeaks.setChecked(False)
         self.background_result = None
         self.fit_result = None
-        self.widget.plainTextEdit_BackgroundReport.clear()
         self.widget.tableWidget_Results.setRowCount(0)
 
     def _clear_peak_fit_results(self):
@@ -982,12 +1027,14 @@ class MainController:
             row = len(self.current_region.peaks) - 1
         else:
             self.current_region.peaks[row] = peak
+        self.current_region.peaks = self._normalized_peak_collection(self.current_region.peaks)
         self._clear_peak_fit_results()
         self._populate_peak_table()
         self._set_peak_selection(row)
 
     def _append_picked_peak(self, peak: PeakSpec):
         self.current_region.peaks.append(peak)
+        self.current_region.peaks = self._normalized_peak_collection(self.current_region.peaks)
         self._clear_peak_fit_results()
         self._populate_peak_table()
         self.widget.tableWidget_Peaks.clearSelection()
@@ -1079,9 +1126,10 @@ class MainController:
         peaks = []
         for row in range(table.rowCount()):
             name = self._table_text(row, 0, table) or f"p{row + 1}"
-            center_value = self._table_float(row, 6, 0.0)
-            center_min = self._table_optional_float(row, 7, default=0.0)
-            center_max = self._table_optional_float(row, 8)
+            existing_peak = self.current_region.peaks[row] if row < len(self.current_region.peaks) else None
+            center_value = self._table_float(row, 4, 0.0, table)
+            center_min = 0.0 if existing_peak is None else self._constraint_minimum(existing_peak.center)
+            center_max = None if existing_peak is None else existing_peak.center.max
             guess_min = center_min if center_min is not None else center_value
             guess_max = center_max if center_max is not None else center_value
             peaks.append(
@@ -1090,33 +1138,128 @@ class MainController:
                     guess_min_cminv=guess_min,
                     guess_max_cminv=max(guess_max, guess_min),
                     amplitude=ParameterConstraint(
-                        value=self._table_float(row, 2, 100.0),
-                        vary=self._table_checkbox(row, 1),
-                        min=self._table_optional_float(row, 3, default=0.0),
-                        max=self._table_optional_float(row, 4),
+                        value=self._table_float(row, 2, 100.0, table),
+                        vary=self._table_checkbox(row, 1, table),
+                        min=0.0 if existing_peak is None else self._constraint_minimum(existing_peak.amplitude),
+                        max=None if existing_peak is None else existing_peak.amplitude.max,
                     ),
                     center=ParameterConstraint(
                         value=center_value,
-                        vary=self._table_checkbox(row, 5),
+                        vary=self._table_checkbox(row, 3, table),
                         min=center_min,
                         max=center_max,
                     ),
                     sigma=ParameterConstraint(
-                        value=self._table_float(row, 10, 25.0),
-                        vary=self._table_checkbox(row, 9),
-                        min=self._table_optional_float(row, 11, default=0.0),
-                        max=self._table_optional_float(row, 12),
+                        value=self._table_float(row, 6, 25.0, table),
+                        vary=self._table_checkbox(row, 5, table),
+                        min=0.0 if existing_peak is None else self._constraint_minimum(existing_peak.sigma),
+                        max=None if existing_peak is None else existing_peak.sigma.max,
                     ),
                     fraction=ParameterConstraint(
-                        value=self._table_float(row, 14, 0.5),
-                        vary=self._table_checkbox(row, 13),
-                        min=self._table_optional_float(row, 15, default=0.0),
-                        max=self._table_optional_float(row, 16),
+                        value=self._table_float(row, 8, 0.5, table),
+                        vary=self._table_checkbox(row, 7, table),
+                        min=0.0 if existing_peak is None else self._constraint_minimum(existing_peak.fraction),
+                        max=1.0 if existing_peak is None else existing_peak.fraction.max,
                     ),
                 )
             )
-        self.current_region.peaks = [self._normalized_peak_constraints(peak) for peak in peaks]
+        self.current_region.peaks = self._normalized_peak_collection(peaks)
         self._clear_peak_fit_results()
+
+    def edit_peak_setup(self):
+        dialog = self.widget.dialog_PeakSetup
+        self._populate_peak_setup_dialog(dialog.tableWidget_Peaks)
+        if dialog.exec() != int(QtWidgets.QDialog.DialogCode.Accepted):
+            return
+        peaks = self._peaks_from_full_table(dialog.tableWidget_Peaks)
+        self.current_region.peaks = self._normalized_peak_collection(peaks)
+        self._clear_peak_fit_results()
+        self._populate_peak_table()
+
+    def rename_peak_setup_dialog_names(self):
+        table = self.widget.dialog_PeakSetup.tableWidget_Peaks
+        row_count = table.rowCount()
+        if row_count <= 0:
+            return
+        peaks = self._peaks_from_full_table(table)
+        peaks.sort(key=lambda peak: float(peak.center.value))
+        for index, peak in enumerate(peaks, start=1):
+            peak.name = f"p{index}"
+        self._populate_peak_setup_dialog_from_peaks(table, peaks)
+
+    def _populate_peak_setup_dialog(self, table):
+        self._populate_peak_setup_dialog_from_peaks(table, self.current_region.peaks)
+
+    def _populate_peak_setup_dialog_from_peaks(self, table, peaks):
+        table.blockSignals(True)
+        table.setRowCount(len(peaks))
+        for row, peak in enumerate(peaks):
+            peak = self._normalized_peak_constraints(peak)
+            values = [
+                peak.name,
+                f"{peak.amplitude.value:.4g}",
+                f"{self._constraint_minimum(peak.amplitude):.4g}",
+                "" if peak.amplitude.max is None else f"{peak.amplitude.max:.4g}",
+                f"{peak.center.value:.2f}",
+                f"{self._constraint_minimum(peak.center):.2f}",
+                "" if peak.center.max is None else f"{peak.center.max:.2f}",
+                f"{peak.sigma.value:.2f}",
+                f"{self._constraint_minimum(peak.sigma):.2f}",
+                "" if peak.sigma.max is None else f"{peak.sigma.max:.2f}",
+                f"{peak.fraction.value:.4g}",
+                f"{self._constraint_minimum(peak.fraction):.4g}",
+                "" if peak.fraction.max is None else f"{peak.fraction.max:.4g}",
+            ]
+            text_columns = [0, 2, 3, 4, 6, 7, 8, 10, 11, 12, 14, 15, 16]
+            for col, text in zip(text_columns, values, strict=False):
+                table.setItem(row, col, QtWidgets.QTableWidgetItem(text))
+            self._set_vary_checkbox(row, 1, peak.amplitude.vary, table)
+            self._set_vary_checkbox(row, 5, peak.center.vary, table)
+            self._set_vary_checkbox(row, 9, peak.sigma.vary, table)
+            self._set_vary_checkbox(row, 13, peak.fraction.vary, table)
+        table.blockSignals(False)
+
+    def _peaks_from_full_table(self, table) -> list[PeakSpec]:
+        peaks = []
+        for row in range(table.rowCount()):
+            name = self._table_text(row, 0, table) or f"p{row + 1}"
+            center_value = self._table_float(row, 6, 0.0, table)
+            center_min = self._table_optional_float(row, 7, table, default=0.0)
+            center_max = self._table_optional_float(row, 8, table)
+            guess_min = center_min if center_min is not None else center_value
+            guess_max = center_max if center_max is not None else center_value
+            peaks.append(
+                PeakSpec(
+                    name=name,
+                    guess_min_cminv=guess_min,
+                    guess_max_cminv=max(guess_max, guess_min),
+                    amplitude=ParameterConstraint(
+                        value=self._table_float(row, 2, 100.0, table),
+                        vary=self._table_checkbox(row, 1, table),
+                        min=self._table_optional_float(row, 3, table, default=0.0),
+                        max=self._table_optional_float(row, 4, table),
+                    ),
+                    center=ParameterConstraint(
+                        value=center_value,
+                        vary=self._table_checkbox(row, 5, table),
+                        min=center_min,
+                        max=center_max,
+                    ),
+                    sigma=ParameterConstraint(
+                        value=self._table_float(row, 10, 25.0, table),
+                        vary=self._table_checkbox(row, 9, table),
+                        min=self._table_optional_float(row, 11, table, default=0.0),
+                        max=self._table_optional_float(row, 12, table),
+                    ),
+                    fraction=ParameterConstraint(
+                        value=self._table_float(row, 14, 0.5, table),
+                        vary=self._table_checkbox(row, 13, table),
+                        min=self._table_optional_float(row, 15, table, default=0.0),
+                        max=self._table_optional_float(row, 16, table),
+                    ),
+                )
+            )
+        return peaks
 
     def handle_section_table_change(self, item):
         if item is None or item.column() != 1:
@@ -1194,7 +1337,7 @@ class MainController:
                     ),
                 )
             )
-        self.current_region.peaks = [self._normalized_peak_constraints(peak) for peak in updated_peaks]
+        self.current_region.peaks = self._normalized_peak_collection(updated_peaks)
         self._populate_peak_table()
 
     def import_fit_result_for_initial(self):
@@ -1293,7 +1436,9 @@ class MainController:
             self._draw(preserve_limits=preserve_limits)
             return
 
-        self.widget.plainTextEdit_BackgroundReport.setPlainText(self.background_result.fit_report)
+        if self.background_result.fit_report.strip():
+            self.log("[Background report]")
+            self.widget.status_box.appendPlainText(self.background_result.fit_report.strip())
         self._apply_fit_result_to_initial(selected_section.fit_result)
         self._clear_peak_fit_results()
         self._draw(
@@ -1333,6 +1478,11 @@ class MainController:
         canvas.clear()
         raw_ax = canvas.ax_raw
         fit_ax = canvas.ax_fit
+        if self.spectrum is None:
+            canvas.fig.suptitle("")
+        else:
+            title_text = self.spectrum.path if self.widget.checkBox_FullPathForFilename.isChecked() else Path(self.spectrum.path).name
+            canvas.fig.suptitle(title_text, color="#f0f0f0", fontsize=10)
         region = self.current_region
         has_explicit_fit_range = False
 
@@ -1368,9 +1518,6 @@ class MainController:
                     alpha=0.12,
                     label=label,
                 )
-            if self.fit_result is None:
-                for peak in region.peaks:
-                    raw_ax.axvspan(peak.guess_min_cminv, peak.guess_max_cminv, color="#10b981", alpha=0.08)
 
         if self.background_result is not None:
             bg = self.background_result
@@ -1451,8 +1598,13 @@ class MainController:
             fit_span = float(np.nanmax(result.y_bgsub) - np.nanmin(result.y_bgsub)) if result.y_bgsub.size else 0.0
             fit_residual_span = float(np.nanmax(result.residual_bgsub) - np.nanmin(result.residual_bgsub)) if result.residual_bgsub.size else 0.0
             fit_residual_offset = float(np.nanmin(result.y_bgsub) - max(0.08 * max(fit_span, 1.0), 1.5 * fit_residual_span))
+            show_peak_name = self.widget.checkBox_ShowPeakNameInLegend.isChecked()
             for peak in sorted(result.peaks, key=lambda peak_result: float(peak_result.center_cminv)):
-                fit_ax.plot(result.x_cminv, peak.curve, linewidth=1.0, label=f"{peak.center_cminv:.0f} cm$^{{-1}}$")
+                if show_peak_name:
+                    label = f"{peak.name}, {peak.center_cminv:.0f} cm$^{{-1}}$"
+                else:
+                    label = f"{peak.center_cminv:.0f} cm$^{{-1}}$"
+                fit_ax.plot(result.x_cminv, peak.curve, linewidth=1.0, label=label)
             fit_ax.axhline(
                 fit_residual_offset,
                 color="#a1a1aa",
@@ -1522,31 +1674,41 @@ class MainController:
         item = table.item(row, col)
         return "" if item is None else item.text().strip()
 
-    def _table_float(self, row: int, col: int, default: float) -> float:
-        text = self._table_text(row, col, self.widget.tableWidget_Peaks)
+    def _table_float(self, row: int, col: int, default: float, table=None) -> float:
+        if table is None:
+            table = self.widget.tableWidget_Peaks
+        text = self._table_text(row, col, table)
         return default if text == "" else float(text)
 
-    def _table_optional_float(self, row: int, col: int, default=None):
-        text = self._table_text(row, col, self.widget.tableWidget_Peaks)
+    def _table_optional_float(self, row: int, col: int, table=None, default=None):
+        if table is None:
+            table = self.widget.tableWidget_Peaks
+        text = self._table_text(row, col, table)
         return default if text == "" else float(text)
 
-    def _table_checkbox(self, row: int, col: int) -> bool:
-        widget = self.widget.tableWidget_Peaks.cellWidget(row, col)
+    def _table_checkbox(self, row: int, col: int, table=None) -> bool:
+        if table is None:
+            table = self.widget.tableWidget_Peaks
+        widget = table.cellWidget(row, col)
         if widget is None:
             return True
         checkbox = widget.findChild(QtWidgets.QCheckBox)
         return True if checkbox is None else checkbox.isChecked()
 
-    def _set_vary_checkbox(self, row: int, col: int, checked: bool):
+    def _set_vary_checkbox(self, row: int, col: int, checked: bool, table=None, on_change=None):
+        if table is None:
+            table = self.widget.tableWidget_Peaks
         checkbox = QtWidgets.QCheckBox()
         checkbox.setChecked(checked)
-        checkbox.stateChanged.connect(lambda _state: self.handle_peak_table_change(None))
+        callback = self.handle_peak_table_change if on_change is None else on_change
+        if callback is not None:
+            checkbox.stateChanged.connect(lambda _state: callback(None))
         container = QtWidgets.QWidget()
         layout = QtWidgets.QHBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(checkbox)
-        self.widget.tableWidget_Peaks.setCellWidget(row, col, container)
+        table.setCellWidget(row, col, container)
 
     @staticmethod
     def _constraint_minimum(param: ParameterConstraint) -> float:
@@ -1567,19 +1729,50 @@ class MainController:
         return lower, upper
 
     def _normalized_peak_constraints(self, peak: PeakSpec) -> PeakSpec:
+        fit_x_min = float(self.current_region.x_min_cminv)
+        fit_x_max = float(self.current_region.x_max_cminv)
+        default_center_min, default_center_max = self._default_bounds(
+            float(peak.center.value),
+            lower_floor=fit_x_min,
+            upper_ceiling=fit_x_max,
+        )
         peak.amplitude.min = self._constraint_minimum(peak.amplitude)
-        peak.center.min = self._constraint_minimum(peak.center)
+        peak.center.min = default_center_min if peak.center.min is None else float(peak.center.min)
+        if peak.center.min <= fit_x_min:
+            peak.center.min = fit_x_min
         peak.sigma.min = self._constraint_minimum(peak.sigma)
         peak.fraction.min = self._constraint_minimum(peak.fraction)
+        peak.center.max = default_center_max if peak.center.max is None else float(peak.center.max)
+        if peak.center.max >= fit_x_max:
+            peak.center.max = fit_x_max
+        if peak.center.max < peak.center.min:
+            peak.center.max = peak.center.min
+        peak.amplitude.max = max(float(peak.amplitude.max or 0.0), peak.amplitude.min)
+        peak.sigma.max = max(float(peak.sigma.max or 0.0), peak.sigma.min)
         if peak.fraction.max is not None:
             peak.fraction.max = min(float(peak.fraction.max), 1.0)
         peak.amplitude.value = max(float(peak.amplitude.value), 0.0)
-        peak.center.value = max(float(peak.center.value), 0.0)
+        peak.center.value = min(max(float(peak.center.value), peak.center.min), peak.center.max)
         peak.sigma.value = max(float(peak.sigma.value), 1e-5)
         peak.fraction.value = min(max(float(peak.fraction.value), 0.0), 1.0)
         peak.guess_min_cminv = max(float(peak.guess_min_cminv), 0.0)
         peak.guess_max_cminv = max(float(peak.guess_max_cminv), peak.guess_min_cminv)
         return peak
+
+    def _normalized_peak_collection(self, peaks: list[PeakSpec]) -> list[PeakSpec]:
+        if not peaks:
+            return []
+        amp_scale = max(max(float(peak.amplitude.value), 0.0) for peak in peaks)
+        sigma_scale = max(max(float(peak.sigma.value), 1e-5) for peak in peaks)
+        shared_amp_max = max(3.0 * amp_scale, 1e-9)
+        shared_sigma_max = max(3.0 * sigma_scale, 1e-5)
+        normalized_peaks: list[PeakSpec] = []
+        for peak in peaks:
+            peak = self._normalized_peak_constraints(peak)
+            peak.amplitude.max = max(shared_amp_max, peak.amplitude.min)
+            peak.sigma.max = max(shared_sigma_max, peak.sigma.min)
+            normalized_peaks.append(peak)
+        return normalized_peaks
 
     def save_fit_results(self):
         if self.spectrum is None or not self.saved_sections:
@@ -1728,22 +1921,27 @@ class MainController:
             QtWidgets.QMessageBox.information(self.widget, "Select one section", "Select one section row first.")
             return
         section = copy.deepcopy(self.saved_sections[rows[0]])
+        x_min, x_max = self._section_peakfit_bounds(section)
         self.current_region = section.region
         self.background_result = section.background_result
         self.fit_result = section.fit_result
         self._populate_background_area_table()
         self._populate_peak_table()
         self._populate_sections_table()
-        self.widget.plainTextEdit_BackgroundReport.setPlainText(
-            "" if self.background_result is None else self.background_result.fit_report
-        )
         self._update_results_table()
         self._draw()
+        if x_min is not None and x_max is not None:
+            raw_ax = self.widget.mpl.canvas.ax_raw
+            fit_ax = self.widget.mpl.canvas.ax_fit
+            raw_ax.set_xlim(x_min, x_max)
+            fit_ax.set_xlim(x_min, x_max)
         self.find_view_minmax()
+        if self.background_result is not None and self.background_result.fit_report.strip():
+            self.log("[Background report]")
+            self.widget.status_box.appendPlainText(self.background_result.fit_report.strip())
         if self.fit_result is not None and self.fit_result.fit_report.strip():
             self.log("[PeakFit report]")
             self.widget.status_box.appendPlainText(self.fit_result.fit_report.strip())
-        x_min, x_max = self._section_peakfit_bounds(section)
         self.log(
             f"Loaded section {section.label} "
             f"({x_min:.2f}-{x_max:.2f} cm$^{{-1}}$) into the current queue."
@@ -1838,6 +2036,7 @@ class MainController:
             self.current_region = self._region_from_payload(region_payload)
         else:
             self.current_region = clone_region(default_region())
+        self.current_region.peaks = self._normalized_peak_collection(self.current_region.peaks)
         self.background_result = self._background_result_from_payload(payload.get("background_result"))
         self.fit_result = self._fit_result_from_payload(payload.get("fit_result"))
         self.saved_sections = []
@@ -1848,11 +2047,16 @@ class MainController:
         self._populate_background_area_table()
         self._populate_peak_table()
         self._populate_sections_table()
-        self.widget.plainTextEdit_BackgroundReport.setPlainText(
-            "" if self.background_result is None else self.background_result.fit_report
-        )
         self._update_results_table()
         self._draw()
+        raw_ax = self.widget.mpl.canvas.ax_raw
+        fit_ax = self.widget.mpl.canvas.ax_fit
+        raw_ax.set_xlim(self.current_region.x_min_cminv, self.current_region.x_max_cminv)
+        fit_ax.set_xlim(self.current_region.x_min_cminv, self.current_region.x_max_cminv)
+        self.find_view_minmax()
+        if self.background_result is not None and self.background_result.fit_report.strip():
+            self.log("[Background report]")
+            self.widget.status_box.appendPlainText(self.background_result.fit_report.strip())
 
     def _region_from_payload(self, region_payload):
         region = clone_region(default_region())

@@ -4,6 +4,56 @@ from ..version import __version__
 from .mplwidget import MplWidget
 
 
+class PeakSetupDialog(QtWidgets.QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Edit fitting setup")
+        self.resize(1200, 700)
+        layout = QtWidgets.QVBoxLayout(self)
+
+        self.tableWidget_Peaks = QtWidgets.QTableWidget(0, 17)
+        self.tableWidget_Peaks.setHorizontalHeaderLabels(
+            [
+                "Name",
+                "Avari",
+                "Amp",
+                "min A",
+                "max A",
+                "Cvari",
+                "Cent",
+                "min C",
+                "max C",
+                "Wvari",
+                "Width",
+                "min W",
+                "max W",
+                "nLvari",
+                "nL",
+                "min nL",
+                "max nL",
+            ]
+        )
+        header = self.tableWidget_Peaks.horizontalHeader()
+        header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Stretch)
+        self.tableWidget_Peaks.verticalHeader().setVisible(False)
+        self.tableWidget_Peaks.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
+        self.tableWidget_Peaks.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
+        layout.addWidget(self.tableWidget_Peaks, 1)
+
+        action_row = QtWidgets.QHBoxLayout()
+        self.pushButton_RenamePeakNamesDefault = QtWidgets.QPushButton("Rename peak names for default")
+        action_row.addWidget(self.pushButton_RenamePeakNamesDefault)
+        action_row.addStretch(1)
+        layout.addLayout(action_row)
+
+        self.buttonBox = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.StandardButton.Ok | QtWidgets.QDialogButtonBox.StandardButton.Cancel
+        )
+        self.buttonBox.accepted.connect(self.accept)
+        self.buttonBox.rejected.connect(self.reject)
+        layout.addWidget(self.buttonBox)
+
+
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -23,6 +73,7 @@ class MainWindow(QtWidgets.QMainWindow):
         splitter.addWidget(self.mpl)
 
         right_panel = QtWidgets.QWidget(self)
+        right_panel.setMinimumWidth(430)
         right_layout = QtWidgets.QVBoxLayout(right_panel)
         splitter.addWidget(right_panel)
         splitter.setStretchFactor(0, 3)
@@ -117,6 +168,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.toolButton_ZoomIn.setToolTip("Zoom to active fit area")
         self.pushButton_AdjustYForSpectrum = QtWidgets.QPushButton("Yspec")
         self.pushButton_FindViewMinMax = QtWidgets.QPushButton("Yadj")
+        self.pushButton_ClearAll = QtWidgets.QPushButton("Clear")
         self.pushButton_SaveSession = QtWidgets.QPushButton("Save")
         toolbar_buttons = (
             self.toolButton_Full,
@@ -124,6 +176,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.toolButton_ZoomIn,
             self.pushButton_AdjustYForSpectrum,
             self.pushButton_FindViewMinMax,
+            self.pushButton_ClearAll,
             self.pushButton_SaveSession,
         )
         target_height = max(button.sizeHint().height() for button in toolbar_buttons)
@@ -137,6 +190,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.toolButton_ZoomIn,
             self.pushButton_AdjustYForSpectrum,
             self.pushButton_FindViewMinMax,
+            self.pushButton_ClearAll,
             self.pushButton_SaveSession,
         ):
             toolbar_row.addWidget(button, 1)
@@ -181,11 +235,15 @@ class MainWindow(QtWidgets.QMainWindow):
     def _build_plot_tab(self):
         tab = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(tab)
+        self.doubleSpinBox_XMin = QtWidgets.QDoubleSpinBox()
+        self.doubleSpinBox_XMax = QtWidgets.QDoubleSpinBox()
         self.doubleSpinBox_TopYMin = QtWidgets.QDoubleSpinBox()
         self.doubleSpinBox_TopYMax = QtWidgets.QDoubleSpinBox()
         self.doubleSpinBox_BottomYMin = QtWidgets.QDoubleSpinBox()
         self.doubleSpinBox_BottomYMax = QtWidgets.QDoubleSpinBox()
         for box in (
+            self.doubleSpinBox_XMin,
+            self.doubleSpinBox_XMax,
             self.doubleSpinBox_TopYMin,
             self.doubleSpinBox_TopYMax,
             self.doubleSpinBox_BottomYMin,
@@ -205,18 +263,31 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.label_TopYMinMax = QtWidgets.QLabel("Top Y min/max")
         self.label_BottomYMinMax = QtWidgets.QLabel("Btm Y min/max")
-        grid.addWidget(self.label_TopYMinMax, 0, 0)
-        grid.addWidget(self.doubleSpinBox_TopYMin, 0, 1)
-        grid.addWidget(self.doubleSpinBox_TopYMax, 0, 2)
-        grid.addWidget(self.label_BottomYMinMax, 1, 0)
-        grid.addWidget(self.doubleSpinBox_BottomYMin, 1, 1)
-        grid.addWidget(self.doubleSpinBox_BottomYMax, 1, 2)
+        self.label_XMinMax = QtWidgets.QLabel("X min/max")
+        grid.addWidget(self.label_XMinMax, 0, 0)
+        grid.addWidget(self.doubleSpinBox_XMin, 0, 1)
+        grid.addWidget(self.doubleSpinBox_XMax, 0, 2)
+        grid.addWidget(self.label_TopYMinMax, 1, 0)
+        grid.addWidget(self.doubleSpinBox_TopYMin, 1, 1)
+        grid.addWidget(self.doubleSpinBox_TopYMax, 1, 2)
+        grid.addWidget(self.label_BottomYMinMax, 2, 0)
+        grid.addWidget(self.doubleSpinBox_BottomYMin, 2, 1)
+        grid.addWidget(self.doubleSpinBox_BottomYMax, 2, 2)
         layout.addLayout(grid)
 
         button_row = QtWidgets.QHBoxLayout()
         button_row.addWidget(self.pushButton_ApplyView)
         button_row.addStretch(1)
         layout.addLayout(button_row)
+
+        self.checkBox_ShowPeakNameInLegend = QtWidgets.QCheckBox("Show peak name in legend")
+        self.checkBox_ShowPeakNameInLegend.setChecked(True)
+        layout.addWidget(self.checkBox_ShowPeakNameInLegend)
+
+        self.checkBox_FullPathForFilename = QtWidgets.QCheckBox("Full path for filename")
+        self.checkBox_FullPathForFilename.setChecked(False)
+        layout.addWidget(self.checkBox_FullPathForFilename)
+
         layout.addStretch(1)
         self.tabs.addTab(tab, "Plot")
 
@@ -261,10 +332,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tableWidget_BackgroundAreas.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
         self.tableWidget_BackgroundAreas.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
         layout.addWidget(self.tableWidget_BackgroundAreas, 1)
-
-        self.plainTextEdit_BackgroundReport = QtWidgets.QPlainTextEdit()
-        self.plainTextEdit_BackgroundReport.setReadOnly(True)
-        layout.addWidget(self.plainTextEdit_BackgroundReport, 1)
 
         self.tabs.addTab(tab, "Background")
 
@@ -323,28 +390,25 @@ class MainWindow(QtWidgets.QMainWindow):
             button_row2.addWidget(button, 1)
         layout.addLayout(button_row2)
 
-        layout.addWidget(QtWidgets.QLabel("Fitting setup"))
+        setup_row = QtWidgets.QHBoxLayout()
+        setup_row.addWidget(QtWidgets.QLabel("Fitting setup"))
+        self.pushButton_EditPeakSetup = QtWidgets.QPushButton("Edit fitting setup")
+        setup_row.addWidget(self.pushButton_EditPeakSetup)
+        setup_row.addStretch(1)
+        layout.addLayout(setup_row)
 
-        self.tableWidget_Peaks = QtWidgets.QTableWidget(0, 17)
+        self.tableWidget_Peaks = QtWidgets.QTableWidget(0, 9)
         self.tableWidget_Peaks.setHorizontalHeaderLabels(
             [
                 "Name",
                 "Avari",
                 "Amp",
-                "min A",
-                "max A",
                 "Cvari",
                 "Cent",
-                "min C",
-                "max C",
                 "Wvari",
                 "Width",
-                "min W",
-                "max W",
                 "nLvari",
                 "nL",
-                "min nL",
-                "max nL",
             ]
         )
         header = self.tableWidget_Peaks.horizontalHeader()
@@ -354,15 +418,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tableWidget_Peaks.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
         self.tableWidget_Peaks.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.SingleSelection)
         layout.addWidget(self.tableWidget_Peaks, 1)
+        self.dialog_PeakSetup = PeakSetupDialog(self)
 
         layout.addWidget(QtWidgets.QLabel("Fit result"))
 
         self.tableWidget_Results = QtWidgets.QTableWidget(0, 5)
         self.tableWidget_Results.setHorizontalHeaderLabels(
-            ["Peak", "Center (cm^-1)", "Amplitude", "Sigma (cm^-1)", "Fraction"]
+            ["Peak", "Center", "Amp", "Width", "nL"]
         )
         results_header = self.tableWidget_Results.horizontalHeader()
-        results_header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.Stretch)
+        results_header.setSectionResizeMode(QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
+        results_header.setStretchLastSection(False)
         self.tableWidget_Results.verticalHeader().setVisible(False)
         layout.addWidget(self.tableWidget_Results, 1)
 
@@ -397,13 +463,11 @@ class MainWindow(QtWidgets.QMainWindow):
             controls.addWidget(button, 1)
         layout.addLayout(controls)
 
-        self.tableWidget_Sections = QtWidgets.QTableWidget(0, 8)
+        self.tableWidget_Sections = QtWidgets.QTableWidget(0, 6)
         self.tableWidget_Sections.setHorizontalHeaderLabels(
             [
                 "Saved",
                 "Comment",
-                "xbg min",
-                "xbg max",
                 "xpfit min",
                 "xpfit max",
                 "Peaks",
@@ -417,8 +481,6 @@ class MainWindow(QtWidgets.QMainWindow):
         header.setSectionResizeMode(3, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(4, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(5, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(6, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(7, QtWidgets.QHeaderView.ResizeMode.ResizeToContents)
         self.tableWidget_Sections.verticalHeader().setVisible(False)
         self.tableWidget_Sections.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows)
         self.tableWidget_Sections.setSelectionMode(QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection)
