@@ -4,10 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vibfit"
-version = "0.1.0"
+version = "0.5.0"
 description = "Qt application for constrained vibEELS peak fitting."
 readme = "README.md"
 requires-python = ">=3.10"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
 authors = [
   { name = "Dan Shim" }
 ]
@@ -16,7 +18,6 @@ classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: X11 Applications :: Qt",
   "Intended Audience :: Science/Research",
-  "License :: Other/Proprietary License",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
@@ -34,9 +35,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/your-org/vibfit"
-Repository = "https://github.com/your-org/vibfit"
-Issues = "https://github.com/your-org/vibfit/issues"
+Homepage = "https://github.com/SHDShim/vibfit"
+Repository = "https://github.com/SHDShim/vibfit"
+Issues = "https://github.com/SHDShim/vibfit/issues"
 
 [project.gui-scripts]
 vibfit = "vibfit.__main__:main"

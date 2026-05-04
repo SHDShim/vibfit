@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use vibfit in your research, please cite it using the metadata below."
+title: "vibfit: constrained vibEELS peak fitting"
+type: software
+authors:
+  - family-names: "Shim"
+    given-names: "Dan"
+version: "0.5.0"
+date-released: "2026-05-04"
+repository-code: "https://github.com/SHDShim/vibfit"
+url: "https://github.com/SHDShim/vibfit"
+abstract: "vibfit is a Qt desktop application for constrained vibrational EELS peak fitting using lmfit."
+keywords:
+  - "vibEELS"
+  - "EELS"
+  - "spectroscopy"
+  - "mineral physics"
+  - "lmfit"

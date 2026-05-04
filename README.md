@@ -2,11 +2,18 @@
 
 `vibfit` is a Qt desktop application for constrained vibEELS peak fitting using `lmfit`. It is particularly useful for vibrational spectra with broad peaks.
 
-
 ## Install
+
+After the first PyPI release:
 
 ```bash
 pip install vibfit
+```
+
+For development from a local checkout:
+
+```bash
+python -m pip install -e .
 ```
 
 ## Run
@@ -42,6 +49,14 @@ Useful controls:
 ```bash
 python -m build
 ```
+
+## Citation
+
+Citation metadata is provided in `CITATION.cff`. A Zenodo DOI will be added after the first public GitHub release is archived by Zenodo.
+
+## License
+
+`vibfit` is distributed under the BSD 3-Clause License. See `LICENSE`.
 
 ## Notes
 

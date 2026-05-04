@@ -44,7 +44,6 @@ htmlcov/
 .DS_Store
 .idea/
 .vscode/
-.github/
 
 # Qt / Matplotlib runtime caches
 .cache/

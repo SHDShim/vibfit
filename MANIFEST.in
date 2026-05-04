@@ -1,5 +1,8 @@
 include README.md
 include pyproject.toml
+include LICENSE
+include CITATION.cff
+include CHANGELOG.md
 recursive-include vibfit *.py
 recursive-include vibfit/assets *.png *.icns *.ico
 global-exclude __pycache__ *.py[cod] .DS_Store
