@@ -6,6 +6,7 @@ authors:
   - family-names: "Shim"
     given-names: "Dan"
 version: "0.5.0"
+doi: 10.5281/zenodo.20018218
 date-released: "2026-05-04"
 repository-code: "https://github.com/SHDShim/vibfit"
 url: "https://github.com/SHDShim/vibfit"
