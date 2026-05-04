@@ -1768,9 +1768,13 @@ class MainController:
         shared_sigma_max = max(3.0 * sigma_scale, 1e-5)
         normalized_peaks: list[PeakSpec] = []
         for peak in peaks:
+            has_amp_max = peak.amplitude.max is not None
+            has_sigma_max = peak.sigma.max is not None
             peak = self._normalized_peak_constraints(peak)
-            peak.amplitude.max = max(shared_amp_max, peak.amplitude.min)
-            peak.sigma.max = max(shared_sigma_max, peak.sigma.min)
+            if not has_amp_max:
+                peak.amplitude.max = max(shared_amp_max, peak.amplitude.min)
+            if not has_sigma_max:
+                peak.sigma.max = max(shared_sigma_max, peak.sigma.min)
             normalized_peaks.append(peak)
         return normalized_peaks
 

@@ -1,4 +1,5 @@
 include README.md
 include pyproject.toml
 recursive-include vibfit *.py
+recursive-include vibfit/assets *.png *.icns *.ico
 global-exclude __pycache__ *.py[cod] .DS_Store

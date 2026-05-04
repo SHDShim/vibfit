@@ -1,6 +1,7 @@
 import os
 import sys
 import faulthandler
+from importlib import resources
 
 faulthandler.enable()
 
@@ -21,7 +22,7 @@ import matplotlib
 matplotlib.use("QtAgg")
 
 from PyQt6 import QtWidgets
-from PyQt6.QtGui import QColor, QPalette
+from PyQt6.QtGui import QColor, QIcon, QPalette
 
 from .control import MainController
 
@@ -49,11 +50,40 @@ def _build_dark_palette() -> QPalette:
     return palette
 
 
+def _icon_path() -> str | None:
+    try:
+        return str(resources.files("vibfit.assets").joinpath("icon.png"))
+    except (FileNotFoundError, ModuleNotFoundError):
+        return None
+
+
+def _set_macos_dock_icon(icon_path: str):
+    if sys.platform != "darwin":
+        return
+    try:
+        from AppKit import NSApplication, NSImage
+    except ImportError:
+        return
+    image = NSImage.alloc().initWithContentsOfFile_(icon_path)
+    if image is not None:
+        NSApplication.sharedApplication().setApplicationIconImage_(image)
+
+
 app = QtWidgets.QApplication(sys.argv)
+app.setApplicationName("vibfit")
+app.setDesktopFileName("vibfit")
 app.setStyle("Fusion")
 app.setPalette(_build_dark_palette())
+icon_path = _icon_path()
+if icon_path is not None:
+    app_icon = QIcon(icon_path)
+    if not app_icon.isNull():
+        app.setWindowIcon(app_icon)
+        _set_macos_dock_icon(icon_path)
 
 controller = MainController()
+if icon_path is not None:
+    controller.widget.setWindowIcon(app.windowIcon())
 controller.show_window()
 
 ret = app.exec()
