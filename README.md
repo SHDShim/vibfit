@@ -1,6 +1,6 @@
 # vibfit
 
-[![DOI](https://zenodo.org/badge/1175753403.svg)](https://doi.org/10.5281/zenodo.20018217)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20018217.svg)](https://doi.org/10.5281/zenodo.20018217)
 
 `vibfit` is a Qt desktop application for constrained vibEELS peak fitting using `lmfit`. It is particularly useful for vibrational spectra with broad peaks.
 
