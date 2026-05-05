@@ -200,7 +200,7 @@ class MainWindow(QtWidgets.QMainWindow):
         tab = QtWidgets.QWidget()
         layout = QtWidgets.QFormLayout(tab)
 
-        self.pushButton_LoadSpectrum = QtWidgets.QPushButton("Load spectrum")
+        self.pushButton_LoadSpectrum = QtWidgets.QPushButton("Load spectrum (vxy)")
         self.pushButton_LoadSpectrum.setStyleSheet(self._accent_button_style("#166534", "#22c55e"))
         self.label_SpectrumPath = QtWidgets.QLabel("No spectrum loaded")
         self.label_SpectrumPath.setWordWrap(True)
@@ -379,7 +379,7 @@ class MainWindow(QtWidgets.QMainWindow):
         button_row2 = QtWidgets.QHBoxLayout()
         self.pushButton_SaveToSection = QtWidgets.QPushButton("Save to section")
         self.pushButton_SaveToSection.setStyleSheet(self._accent_button_style("#166534", "#22c55e"))
-        self.pushButton_ExportNPY = QtWidgets.QPushButton("Export NPY")
+        self.pushButton_ExportNPY = QtWidgets.QPushButton("Export NPY, PDF, and PNG")
         peakfit_row2_buttons = (
             self.pushButton_SaveToSection,
             self.pushButton_ExportNPY,
