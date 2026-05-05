@@ -2,6 +2,10 @@
 
 All notable changes to `vibfit` are documented here.
 
+## 0.5.1 - 2026-05-05
+
+- Updated labels based on Chen input.
+
 ## 0.5.0 - 2026-05-04
 
 - Added application icons for runtime and packaging.

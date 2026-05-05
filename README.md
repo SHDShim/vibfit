@@ -4,7 +4,7 @@
 
 `vibfit` is a Qt desktop application for constrained vibEELS peak fitting using `lmfit`. It is particularly useful for vibrational spectra with broad peaks.
 
-Current release: `0.5.0`
+Current release: `0.5.1`
 
 ## Install
 
